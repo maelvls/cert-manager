@@ -63,7 +63,6 @@ type controller struct {
 	certificateRequestLister         cmlisters.CertificateRequestLister
 	secretLister                     corelisters.SecretLister
 	client                           cmclient.Interface
-	gatherer                         *policies.Gatherer
 	defaultRenewBeforeExpiryDuration time.Duration
 }
 
@@ -110,10 +109,6 @@ func NewController(
 		certificateRequestLister: certificateRequestInformer.Lister(),
 		secretLister:             secretsInformer.Lister(),
 		client:                   client,
-		gatherer: &policies.Gatherer{
-			CertificateRequestLister: certificateRequestInformer.Lister(),
-			SecretLister:             secretsInformer.Lister(),
-		},
 		defaultRenewBeforeExpiryDuration: defaultRenewBeforeExpiryDuration,
 	}, queue, mustSync
 }
@@ -137,7 +132,7 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 		return err
 	}
 
-	input, err := c.gatherer.DataForCertificate(ctx, crt)
+	input, err := policies.DataForCertificate(ctx, c.secretLister.Secrets(crt.Namespace).Get, c.certificateRequestLister.CertificateRequests(crt.Namespace).List, crt)
 	if err != nil {
 		return err
 	}

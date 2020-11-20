@@ -71,7 +71,6 @@ type controller struct {
 	recorder                 record.EventRecorder
 	clock                    clock.Clock
 	scheduledWorkQueue       scheduler.ScheduledWorkQueue
-	gatherer                 *policies.Gatherer
 }
 
 func NewController(
@@ -121,10 +120,6 @@ func NewController(
 		recorder:                 recorder,
 		clock:                    clock,
 		scheduledWorkQueue:       scheduler.NewScheduledWorkQueue(clock, queue.Add),
-		gatherer: &policies.Gatherer{
-			CertificateRequestLister: certificateRequestInformer.Lister(),
-			SecretLister:             secretsInformer.Lister(),
-		},
 	}, queue, mustSync
 }
 
@@ -153,7 +148,7 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 		return nil
 	}
 
-	input, err := c.gatherer.DataForCertificate(ctx, crt)
+	input, err := policies.DataForCertificate(ctx, c.secretLister.Secrets(crt.Namespace).Get, c.certificateRequestLister.CertificateRequests(crt.Namespace).List, crt)
 	if err != nil {
 		return err
 	}

@@ -162,7 +162,7 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 	}
 
 	// Discover all 'owned' CertificateRequests
-	requests, err := certificates.ListCertificateRequestsMatchingPredicates(c.certificateRequestLister.CertificateRequests(crt.Namespace), labels.Everything(), predicate.ResourceOwnedBy(crt))
+	requests, err := certificates.ListCertificateRequestsMatchingPredicates(c.certificateRequestLister.CertificateRequests(crt.Namespace).List, labels.Everything(), predicate.ResourceOwnedBy(crt))
 	if err != nil {
 		return err
 	}

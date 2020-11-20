@@ -20,51 +20,56 @@ import (
 	"context"
 	"fmt"
 
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
-	corelisters "k8s.io/client-go/listers/core/v1"
 
 	cmapi "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
-	cmlisters "github.com/jetstack/cert-manager/pkg/client/listers/certmanager/v1"
 	"github.com/jetstack/cert-manager/pkg/controller/certificates"
 	logf "github.com/jetstack/cert-manager/pkg/logs"
 	"github.com/jetstack/cert-manager/pkg/util/predicate"
 )
 
-// Gatherer is used to gather data about a Certificate in order to evaluate
-// its current readiness/state by applying policy functions to it.
-type Gatherer struct {
-	CertificateRequestLister cmlisters.CertificateRequestLister
-	SecretLister             corelisters.SecretLister
-}
-
-func (g *Gatherer) DataForCertificate(ctx context.Context, crt *cmapi.Certificate) (Input, error) {
+// DataForCertificate is used to gather data about a Certificate in order
+// to evaluate its current readiness/state by applying policy functions to
+// it.
+//
+// The returned input.CurrentRevisionRequest and input.Secret are left nil
+// when they cannot be found. The input.Certificate is copied as-is from
+// the given crt.
+func DataForCertificate(ctx context.Context, getSecret func(string) (*v1.Secret, error), listReq func(labels.Selector) ([]*cmapi.CertificateRequest, error), crt *cmapi.Certificate) (Input, error) {
 	log := logf.FromContext(ctx)
 	// Attempt to fetch the Secret being managed but tolerate NotFound errors.
-	secret, err := g.SecretLister.Secrets(crt.Namespace).Get(crt.Spec.SecretName)
+	secret, err := getSecret(crt.Spec.SecretName)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return Input{}, err
 	}
 
-	// Attempt to fetch the CertificateRequest resource for the current 'status.revision'.
-	var req *cmapi.CertificateRequest
+	// Fetch the CertificateRequest resource for the current
+	// 'status.revision' if it exists; default to using revision "1" since
+	// the issuing controller may be still issuing the first revision of
+	// the certificate.
+	revision := 1
 	if crt.Status.Revision != nil {
-		reqs, err := certificates.ListCertificateRequestsMatchingPredicates(g.CertificateRequestLister.CertificateRequests(crt.Namespace),
-			labels.Everything(),
-			predicate.ResourceOwnedBy(crt),
-			predicate.CertificateRequestRevision(*crt.Status.Revision),
-		)
-		if err != nil {
-			return Input{}, err
-		}
-		switch {
-		case len(reqs) > 1:
-			return Input{}, fmt.Errorf("multiple CertificateRequest resources exist for the current revision, not triggering new issuance until requests have been cleaned up")
-		case len(reqs) == 1:
-			req = reqs[0]
-		case len(reqs) == 0:
-			log.V(logf.DebugLevel).Info("Found no CertificateRequest resources owned by this Certificate for the current revision", "revision", *crt.Status.Revision)
-		}
+		revision = *crt.Status.Revision
+	}
+	reqs, err := certificates.ListCertificateRequestsMatchingPredicates(listReq,
+		labels.Everything(),
+		predicate.ResourceOwnedBy(crt),
+		predicate.CertificateRequestRevision(revision),
+	)
+	if err != nil {
+		return Input{}, err
+	}
+
+	var req *cmapi.CertificateRequest
+	switch {
+	case len(reqs) > 1:
+		return Input{}, fmt.Errorf("multiple CertificateRequest resources exist for the current revision, not triggering new issuance until requests have been cleaned up")
+	case len(reqs) == 1:
+		req = reqs[0]
+	case len(reqs) == 0:
+		log.V(logf.DebugLevel).Info("Found no CertificateRequest resources owned by this Certificate for the current revision", "revision", revision)
 	}
 
 	return Input{
