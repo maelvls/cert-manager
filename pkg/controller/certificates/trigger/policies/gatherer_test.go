@@ -31,6 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 )
 
+var True = true // That's because we need a pointer to a true value.
+
 func TestDataForCertificate(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -181,5 +183,3 @@ func mockGetSecret(expectedName string, mockSecret *v1.Secret, mockErr error) fu
 func ptr(i int) *int {
 	return &i
 }
-
-var True = true
