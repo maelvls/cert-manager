@@ -148,7 +148,7 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 		return nil
 	}
 
-	input, err := policies.DataForCertificate(ctx, c.secretLister.Secrets(crt.Namespace).Get, c.certificateRequestLister.CertificateRequests(crt.Namespace).List, crt)
+	input, err := policies.DataForCertificate(ctx, c.secretLister.Secrets(crt.Namespace).Get, c.certificateRequestLister.CertificateRequests(crt.Namespace), crt)
 	if err != nil {
 		return err
 	}

@@ -209,7 +209,7 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 		nextRevision = *crt.Status.Revision + 1
 	}
 
-	reqs, err := certificates.ListCertificateRequestsMatchingPredicates(c.certificateRequestLister.CertificateRequests(crt.Namespace).List,
+	reqs, err := certificates.ListCertificateRequestsMatchingPredicates(c.certificateRequestLister.CertificateRequests(crt.Namespace),
 		labels.Everything(),
 		predicate.CertificateRequestRevision(nextRevision),
 		predicate.ResourceOwnedBy(crt),

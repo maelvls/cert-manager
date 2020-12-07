@@ -104,11 +104,11 @@ func NewController(
 	}
 
 	return &controller{
-		policyChain:              chain,
-		certificateLister:        certificateInformer.Lister(),
-		certificateRequestLister: certificateRequestInformer.Lister(),
-		secretLister:             secretsInformer.Lister(),
-		client:                   client,
+		policyChain:                      chain,
+		certificateLister:                certificateInformer.Lister(),
+		certificateRequestLister:         certificateRequestInformer.Lister(),
+		secretLister:                     secretsInformer.Lister(),
+		client:                           client,
 		defaultRenewBeforeExpiryDuration: defaultRenewBeforeExpiryDuration,
 	}, queue, mustSync
 }
@@ -132,7 +132,7 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 		return err
 	}
 
-	input, err := policies.DataForCertificate(ctx, c.secretLister.Secrets(crt.Namespace).Get, c.certificateRequestLister.CertificateRequests(crt.Namespace).List, crt)
+	input, err := policies.DataForCertificate(ctx, c.secretLister.Secrets(crt.Namespace).Get, c.certificateRequestLister.CertificateRequests(crt.Namespace), crt)
 	if err != nil {
 		return err
 	}

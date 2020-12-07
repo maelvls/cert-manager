@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	cmapi "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
+	cmlisters "github.com/jetstack/cert-manager/pkg/client/listers/certmanager/v1"
 	"github.com/jetstack/cert-manager/pkg/controller/certificates"
 	logf "github.com/jetstack/cert-manager/pkg/logs"
 	"github.com/jetstack/cert-manager/pkg/util/predicate"
@@ -37,7 +38,7 @@ import (
 // The returned input.CurrentRevisionRequest and input.Secret are left nil
 // when they cannot be found. The input.Certificate is copied as-is from
 // the given crt.
-func DataForCertificate(ctx context.Context, getSecret func(string) (*v1.Secret, error), listReq func(labels.Selector) ([]*cmapi.CertificateRequest, error), crt *cmapi.Certificate) (Input, error) {
+func DataForCertificate(ctx context.Context, getSecret func(string) (*v1.Secret, error), lister cmlisters.CertificateRequestNamespaceLister, crt *cmapi.Certificate) (Input, error) {
 	log := logf.FromContext(ctx)
 	// Attempt to fetch the Secret being managed but tolerate NotFound errors.
 	secret, err := getSecret(crt.Spec.SecretName)
@@ -53,7 +54,7 @@ func DataForCertificate(ctx context.Context, getSecret func(string) (*v1.Secret,
 	if crt.Status.Revision != nil {
 		revision = *crt.Status.Revision
 	}
-	reqs, err := certificates.ListCertificateRequestsMatchingPredicates(listReq,
+	reqs, err := certificates.ListCertificateRequestsMatchingPredicates(lister,
 		labels.Everything(),
 		predicate.ResourceOwnedBy(crt),
 		predicate.CertificateRequestRevision(revision),

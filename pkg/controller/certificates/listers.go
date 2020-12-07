@@ -29,8 +29,8 @@ import (
 // ListCertificateRequestsMatchingPredicates will list CertificateRequest
 // resources using the provided lister, optionally applying the given predicate
 // functions to filter the CertificateRequest resources returned.
-func ListCertificateRequestsMatchingPredicates(list func(labels.Selector) ([]*cmapi.CertificateRequest, error), selector labels.Selector, predicates ...predicate.Func) ([]*cmapi.CertificateRequest, error) {
-	reqs, err := list(selector)
+func ListCertificateRequestsMatchingPredicates(lister cmlisters.CertificateRequestNamespaceLister, selector labels.Selector, predicates ...predicate.Func) ([]*cmapi.CertificateRequest, error) {
+	reqs, err := lister.List(selector)
 	if err != nil {
 		return nil, err
 	}
