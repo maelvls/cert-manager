@@ -77,7 +77,7 @@ func TestDataForCertificate(t *testing.T) {
 			}},
 		},
 		{
-			name:           "should return a nil cretificaterequest when no match of revision or owner",
+			name:           "should return a nil certificaterequest when no match of revision or owner",
 			givenCrt:       &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-1"}, Status: cmapi.CertificateStatus{Revision: ptr(1)}},
 			givenGetSecret: mockGetSecret("", nil, nil),
 			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
@@ -89,7 +89,7 @@ func TestDataForCertificate(t *testing.T) {
 			want: Input{CurrentRevisionRequest: nil},
 		},
 		{
-			name:           "should return the cretificaterequest with revision 1 when certificate has no revision yet",
+			name:           "should return the certificaterequest with revision 1 when certificate has no revision yet",
 			givenCrt:       &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-1"}, Status: cmapi.CertificateStatus{Revision: nil}},
 			givenGetSecret: mockGetSecret("", nil, nil),
 			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
@@ -102,7 +102,7 @@ func TestDataForCertificate(t *testing.T) {
 			}},
 		},
 		{
-			name: "should return the cretificaterequest and secret and both found",
+			name: "should return the certificaterequest and secret and both found",
 			givenCrt: &cmapi.Certificate{
 				ObjectMeta: metav1.ObjectMeta{UID: "uid-1"},
 				Spec:       cmapi.CertificateSpec{SecretName: "secret-1"},
@@ -124,7 +124,7 @@ func TestDataForCertificate(t *testing.T) {
 			},
 		},
 		{
-			name:           "should return error when multiple cretificaterequests found",
+			name:           "should return error when multiple certificaterequests found",
 			givenCrt:       &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-1"}, Status: cmapi.CertificateStatus{Revision: ptr(1)}},
 			givenGetSecret: mockGetSecret("", nil, nil),
 			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
