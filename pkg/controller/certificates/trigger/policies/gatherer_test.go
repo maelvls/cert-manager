@@ -27,11 +27,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/pointer"
 
 	cmapi "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 )
-
-var True = true // That's because we need a pointer to a true value.
 
 func TestDataForCertificate(t *testing.T) {
 	tests := []struct {
@@ -68,12 +67,12 @@ func TestDataForCertificate(t *testing.T) {
 			givenCrt:       &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-7"}, Status: cmapi.CertificateStatus{Revision: ptr(7)}},
 			givenGetSecret: mockGetSecret("", nil, nil),
 			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
-				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-4", Controller: &True}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "4"}}},
-				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-7", Controller: &True}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "7"}}},
-				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-9", Controller: &True}}}},
+				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-4", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "4"}}},
+				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-7", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "7"}}},
+				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-9", Controller: pointer.BoolPtr(true)}}}},
 			}, nil),
 			want: Input{CurrentRevisionRequest: &cmapi.CertificateRequest{
-				ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-7", Controller: &True}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "7"}},
+				ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-7", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "7"}},
 			}},
 		},
 		{
@@ -81,8 +80,8 @@ func TestDataForCertificate(t *testing.T) {
 			givenCrt:       &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-1"}, Status: cmapi.CertificateStatus{Revision: ptr(1)}},
 			givenGetSecret: mockGetSecret("", nil, nil),
 			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
-				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: &True}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "2"}}},
-				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: &True}}}},
+				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "2"}}},
+				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1"}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-42"}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
 			}, nil),
@@ -93,12 +92,12 @@ func TestDataForCertificate(t *testing.T) {
 			givenCrt:       &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-1"}, Status: cmapi.CertificateStatus{Revision: nil}},
 			givenGetSecret: mockGetSecret("", nil, nil),
 			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
-				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: &True}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
-				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: &True}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "2"}}},
-				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: &True}}}},
+				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
+				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "2"}}},
+				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}}},
 			}, nil),
 			want: Input{CurrentRevisionRequest: &cmapi.CertificateRequest{
-				ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: &True}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}},
+				ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}},
 			}},
 		},
 		{
@@ -111,13 +110,13 @@ func TestDataForCertificate(t *testing.T) {
 			givenGetSecret: mockGetSecret("secret-1", &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "secret-1"}}, nil),
 			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
 				{ObjectMeta: metav1.ObjectMeta{
-					OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: &True}},
+					OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}},
 					Annotations:     map[string]string{"cert-manager.io/certificate-revision": "1"}},
 				},
 			}, nil),
 			want: Input{
 				CurrentRevisionRequest: &cmapi.CertificateRequest{ObjectMeta: metav1.ObjectMeta{
-					OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: &True}},
+					OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}},
 					Annotations:     map[string]string{"cert-manager.io/certificate-revision": "1"}},
 				},
 				Secret: &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "secret-1"}},
@@ -128,8 +127,8 @@ func TestDataForCertificate(t *testing.T) {
 			givenCrt:       &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-1"}, Status: cmapi.CertificateStatus{Revision: ptr(1)}},
 			givenGetSecret: mockGetSecret("", nil, nil),
 			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
-				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: &True}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
-				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: &True}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
+				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
+				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
 			}, nil),
 			want:    Input{},
 			wantErr: "multiple CertificateRequest resources exist for the current revision, not triggering new issuance until requests have been cleaned up",
