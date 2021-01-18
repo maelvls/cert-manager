@@ -18,6 +18,7 @@ package policies
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
@@ -31,21 +32,48 @@ import (
 	"github.com/jetstack/cert-manager/pkg/util/predicate"
 )
 
-// DataForCertificate is used to gather data about a Certificate in order
-// to evaluate its current readiness/state by applying policy functions to
-// it.
-//
-// The returned input.CurrentRevisionRequest and input.Secret are left nil
-// when they cannot be found. The input.Certificate is copied as-is from
-// the given crt.
-func DataForCertificate(ctx context.Context, getSecret func(string) (*v1.Secret, error), lister cmlisters.CertificateRequestNamespaceLister, crt *cmapi.Certificate) (Input, error) {
+var (
+	Conflict = errors.New("found multiple certificate requests with the given revision and owner")
+	NotFound = errors.New("found no certificate request with the given revision and owner")
+)
+
+// GetRelatedResources fetches the Secret and CertificateRequest associated
+// with the given Certificate. When not found, the returned Secret and/or
+// CR are simply left nil and no error is returned.
+func GetRelatedResources(ctx context.Context, getSecret func(string) (*v1.Secret, error), listCR cmlisters.CertificateRequestNamespaceLister, crt *cmapi.Certificate) (*v1.Secret, *cmapi.CertificateRequest, error) {
 	log := logf.FromContext(ctx)
-	// Attempt to fetch the Secret being managed but tolerate NotFound errors.
+
 	secret, err := getSecret(crt.Spec.SecretName)
 	if err != nil && !apierrors.IsNotFound(err) {
-		return Input{}, err
+		return nil, nil, err
 	}
 
+	cr, err := findPreviousCR(listCR, crt)
+	switch {
+	case err == Conflict:
+		return nil, nil, fmt.Errorf("multiple CertificateRequest resources exist for the current revision, not triggering new issuance until requests have been cleaned up")
+	case err == NotFound:
+		log.V(logf.DebugLevel).Info("Found no CertificateRequest resources owned by this Certificate for the current revision", "revision", crt.Status.Revision)
+	case err != nil:
+		return nil, nil, err
+	}
+
+	return secret, cr, nil
+}
+
+// findCurrentCR retrieves the current certificate request associated with
+// the given certificate.
+//
+// A CertificateRequest is associated to a given
+// certificate when both:
+// (1) the CR is owned by the certificate, and
+// (2) the CR contains an annotation that matches the certificate's
+// status.revision, or "1" when status.revision is nil.
+//
+// This function returns a NotFound error when no CR is found, and returns
+// Conflict when two CRs or more have been found for the certificate's
+// revision.
+func findPreviousCR(lister cmlisters.CertificateRequestNamespaceLister, crt *cmapi.Certificate) (*cmapi.CertificateRequest, error) {
 	// Fetch the CertificateRequest resource for the current
 	// 'status.revision' if it exists; default to using revision "1" since
 	// the issuing controller may be still issuing the first revision of
@@ -60,22 +88,22 @@ func DataForCertificate(ctx context.Context, getSecret func(string) (*v1.Secret,
 		predicate.CertificateRequestRevision(revision),
 	)
 	if err != nil {
-		return Input{}, err
+		return nil, err
 	}
 
 	var req *cmapi.CertificateRequest
 	switch {
 	case len(reqs) > 1:
-		return Input{}, fmt.Errorf("multiple CertificateRequest resources exist for the current revision, not triggering new issuance until requests have been cleaned up")
+		return nil, Conflict
+	case len(reqs) == 0:
+		// We use a custom error because we cannot use errors.NewNotFound.
+		// That is due to the fact that errors.NewNotFound needs to be
+		// given a specific object name. Here, we don't know the name of
+		// the CertificateRequest.
+		return nil, NotFound
 	case len(reqs) == 1:
 		req = reqs[0]
-	case len(reqs) == 0:
-		log.V(logf.DebugLevel).Info("Found no CertificateRequest resources owned by this Certificate for the current revision", "revision", revision)
 	}
 
-	return Input{
-		Certificate:            crt,
-		CurrentRevisionRequest: req,
-		Secret:                 secret,
-	}, nil
+	return req, nil
 }

@@ -29,16 +29,10 @@ import (
 	"github.com/jetstack/cert-manager/pkg/util/pki"
 )
 
-type Input struct {
-	Certificate            *cmapi.Certificate
-	CurrentRevisionRequest *cmapi.CertificateRequest
-	Secret                 *corev1.Secret
-}
-
 // A Func evaluates the given input data and decides whether a
 // re-issuance is required, returning additional human readable information
 // in the 'reason' and 'message' return parameters if so.
-type Func func(Input) (reason, message string, reissue bool)
+type Func func(*cmapi.Certificate, *cmapi.CertificateRequest, *corev1.Secret) (reason, message string, reissue bool)
 
 // A chain of PolicyFuncs to be evaluated in order.
 type Chain []Func
@@ -46,9 +40,9 @@ type Chain []Func
 // Evaluate will evaluate the entire policy chain using the provided input.
 // As soon as a policy function indicates a re-issuance is required, the method
 // will return and not evaluate the rest of the chain.
-func (c Chain) Evaluate(input Input) (string, string, bool) {
+func (c Chain) Evaluate(crt *cmapi.Certificate, cr *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
 	for _, policyFunc := range c {
-		reason, message, reissue := policyFunc(input)
+		reason, message, reissue := policyFunc(crt, cr, secret)
 		if reissue {
 			return reason, message, reissue
 		}
@@ -68,19 +62,19 @@ func NewTriggerPolicyChain(c clock.Clock) Chain {
 	}
 }
 
-func SecretDoesNotExist(input Input) (string, string, bool) {
-	if input.Secret == nil {
+func SecretDoesNotExist(_ *cmapi.Certificate, _ *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+	if secret == nil {
 		return "DoesNotExist", "Issuing certificate as Secret does not exist", true
 	}
 	return "", "", false
 }
 
-func SecretHasData(input Input) (string, string, bool) {
-	if input.Secret.Data == nil {
+func SecretHasData(_ *cmapi.Certificate, _ *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+	if secret.Data == nil {
 		return "MissingData", "Issuing certificate as Secret does not contain any data", true
 	}
-	pkData := input.Secret.Data[corev1.TLSPrivateKeyKey]
-	certData := input.Secret.Data[corev1.TLSCertKey]
+	pkData := secret.Data[corev1.TLSPrivateKeyKey]
+	certData := secret.Data[corev1.TLSCertKey]
 	if len(pkData) == 0 {
 		return "MissingData", "Issuing certificate as Secret does not contain a private key", true
 	}
@@ -90,9 +84,9 @@ func SecretHasData(input Input) (string, string, bool) {
 	return "", "", false
 }
 
-func SecretPublicKeysMatch(input Input) (string, string, bool) {
-	pkData := input.Secret.Data[corev1.TLSPrivateKeyKey]
-	certData := input.Secret.Data[corev1.TLSCertKey]
+func SecretPublicKeysMatch(_ *cmapi.Certificate, _ *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+	pkData := secret.Data[corev1.TLSPrivateKeyKey]
+	certData := secret.Data[corev1.TLSCertKey]
 	// TODO: replace this with a generic decoder that can handle different
 	//  formats such as JKS, P12 etc (i.e. add proper support for keystores)
 	_, err := tls.X509KeyPair(certData, pkData)
@@ -102,18 +96,18 @@ func SecretPublicKeysMatch(input Input) (string, string, bool) {
 	return "", "", false
 }
 
-func SecretPrivateKeyMatchesSpec(input Input) (string, string, bool) {
-	if input.Secret.Data == nil || len(input.Secret.Data[corev1.TLSPrivateKeyKey]) == 0 {
+func SecretPrivateKeyMatchesSpec(crt *cmapi.Certificate, _ *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+	if secret.Data == nil || len(secret.Data[corev1.TLSPrivateKeyKey]) == 0 {
 		return "SecretMismatch", fmt.Sprintf("Existing issued Secret does not contain private key data"), true
 	}
 
-	pkBytes := input.Secret.Data[corev1.TLSPrivateKeyKey]
+	pkBytes := secret.Data[corev1.TLSPrivateKeyKey]
 	pk, err := pki.DecodePrivateKeyBytes(pkBytes)
 	if err != nil {
 		return "SecretMismatch", fmt.Sprintf("Existing issued Secret contains invalid private key data: %v", err), true
 	}
 
-	violations, err := certificates.PrivateKeyMatchesSpec(pk, input.Certificate.Spec)
+	violations, err := certificates.PrivateKeyMatchesSpec(pk, crt.Spec)
 	if err != nil {
 		return "SecretMismatch", fmt.Sprintf("Failed to check private key is up to date: %v", err), true
 	}
@@ -123,30 +117,30 @@ func SecretPrivateKeyMatchesSpec(input Input) (string, string, bool) {
 	return "", "", false
 }
 
-func SecretHasUpToDateIssuerAnnotations(input Input) (string, string, bool) {
-	name := input.Secret.Annotations[cmapi.IssuerNameAnnotationKey]
-	kind := input.Secret.Annotations[cmapi.IssuerKindAnnotationKey]
-	group := input.Secret.Annotations[cmapi.IssuerGroupAnnotationKey]
-	if name != input.Certificate.Spec.IssuerRef.Name ||
-		!issuerKindsEqual(kind, input.Certificate.Spec.IssuerRef.Kind) ||
-		!issuerGroupsEqual(group, input.Certificate.Spec.IssuerRef.Group) {
+func SecretHasUpToDateIssuerAnnotations(crt *cmapi.Certificate, _ *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+	name := secret.Annotations[cmapi.IssuerNameAnnotationKey]
+	kind := secret.Annotations[cmapi.IssuerKindAnnotationKey]
+	group := secret.Annotations[cmapi.IssuerGroupAnnotationKey]
+	if name != crt.Spec.IssuerRef.Name ||
+		!issuerKindsEqual(kind, crt.Spec.IssuerRef.Kind) ||
+		!issuerGroupsEqual(group, crt.Spec.IssuerRef.Group) {
 		return "IncorrectIssuer", fmt.Sprintf("Issuing certificate as Secret was previously issued by %s", formatIssuerRef(name, kind, group)), true
 	}
 	return "", "", false
 }
 
-func CurrentCertificateRequestValidForSpec(input Input) (string, string, bool) {
-	if input.CurrentRevisionRequest == nil {
+func CurrentCertificateRequestValidForSpec(crt *cmapi.Certificate, cr *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+	if cr == nil {
 		// Fallback to comparing the Certificate spec with the issued certificate.
 		// This case is encountered if the CertificateRequest that issued the current
 		// Secret is not available (most likely due to it being deleted).
 		// This comparison is a lot less robust than comparing against the CertificateRequest
 		// as it has to tolerate/permit certain fields being overridden or ignored by the
 		// signer/issuer implementation.
-		return currentSecretValidForSpec(input)
+		return currentSecretValidForSpec(crt, cr, secret)
 	}
 
-	violations, err := certificates.RequestMatchesSpec(input.CurrentRevisionRequest, input.Certificate.Spec)
+	violations, err := certificates.RequestMatchesSpec(cr, crt.Spec)
 	if err != nil {
 		// If parsing the request fails, we don't immediately trigger a re-issuance as
 		// the existing certificate stored in the Secret may still be valid/up to date.
@@ -162,8 +156,8 @@ func CurrentCertificateRequestValidForSpec(input Input) (string, string, bool) {
 // currentSecretValidForSpec is not actually registered as part of the policy chain
 // and is instead called by currentCertificateRequestValidForSpec if no there
 // is no existing CertificateRequest resource.
-func currentSecretValidForSpec(input Input) (string, string, bool) {
-	violations, err := certificates.SecretDataAltNamesMatchSpec(input.Secret, input.Certificate.Spec)
+func currentSecretValidForSpec(crt *cmapi.Certificate, cr *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+	violations, err := certificates.SecretDataAltNamesMatchSpec(secret, crt.Spec)
 	if err != nil {
 		// This case should never be reached as we already check the certificate data can
 		// be parsed in an earlier policy check, but handle it anyway.
@@ -179,24 +173,24 @@ func currentSecretValidForSpec(input Input) (string, string, bool) {
 }
 
 func CurrentCertificateNearingExpiry(c clock.Clock) Func {
-	return func(input Input) (string, string, bool) {
-		if input.Certificate.Status.RenewalTime == nil {
+	return func(crt *cmapi.Certificate, cr *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+		if crt.Status.RenewalTime == nil {
 			return "", "", false
 		}
 
-		renewIn := input.Certificate.Status.RenewalTime.Time.Sub(c.Now())
+		renewIn := crt.Status.RenewalTime.Time.Sub(c.Now())
 		if renewIn > 0 {
 			return "", "", false
 		}
 
-		return "Renewing", fmt.Sprintf("Renewing certificate as renewal was scheduled at %s", input.Certificate.Status.RenewalTime), true
+		return "Renewing", fmt.Sprintf("Renewing certificate as renewal was scheduled at %s", crt.Status.RenewalTime), true
 	}
 }
 
 // CurrentCertificateHasExpired is used exclusively to check if the current
 // issued certificate has actually expired rather than just nearing expiry.
-func CurrentCertificateHasExpired(input Input) (string, string, bool) {
-	certData := input.Secret.Data[corev1.TLSCertKey]
+func CurrentCertificateHasExpired(crt *cmapi.Certificate, cr *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+	certData := secret.Data[corev1.TLSCertKey]
 	// TODO: replace this with a generic decoder that can handle different
 	//  formats such as JKS, P12 etc (i.e. add proper support for keystores)
 	cert, err := pki.DecodeX509CertificateBytes(certData)

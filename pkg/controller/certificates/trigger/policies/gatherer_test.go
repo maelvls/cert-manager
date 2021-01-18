@@ -32,13 +32,14 @@ import (
 	cmapi "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 )
 
-func TestDataForCertificate(t *testing.T) {
+func TestGetRelatedResources(t *testing.T) {
 	tests := []struct {
 		name              string
 		givenGetSecret    func(t *testing.T) func(string) (*v1.Secret, error)
 		givenListRequests func(t *testing.T) requestListerNamespacedMock
 		givenCrt          *cmapi.Certificate
-		want              Input
+		wantSecret        *v1.Secret
+		wantCR            *cmapi.CertificateRequest
 		wantErr           string
 	}{
 		{
@@ -46,7 +47,7 @@ func TestDataForCertificate(t *testing.T) {
 			givenCrt:          &cmapi.Certificate{Spec: cmapi.CertificateSpec{SecretName: "secret-1"}, ObjectMeta: metav1.ObjectMeta{Name: "a"}},
 			givenGetSecret:    mockGetSecret("secret-1", nil, apierrors.NewNotFound(cmapi.Resource("Secret"), "secret-1")),
 			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{}, nil),
-			want:              Input{Secret: nil},
+			wantSecret:        nil,
 		},
 		{
 			name:              "should return an error when getsecret returns an unexpected error that isnt not_found",
@@ -60,7 +61,7 @@ func TestDataForCertificate(t *testing.T) {
 			givenCrt:          &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{Name: "mycert"}},
 			givenGetSecret:    mockGetSecret("", nil, nil),
 			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{}, nil),
-			want:              Input{CurrentRevisionRequest: nil},
+			wantCR:            nil,
 		},
 		{
 			name:           "should find the certificaterequest that matches revision and owner",
@@ -71,9 +72,9 @@ func TestDataForCertificate(t *testing.T) {
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-7", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "7"}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-9", Controller: pointer.BoolPtr(true)}}}},
 			}, nil),
-			want: Input{CurrentRevisionRequest: &cmapi.CertificateRequest{
+			wantCR: &cmapi.CertificateRequest{
 				ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-7", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "7"}},
-			}},
+			},
 		},
 		{
 			name:           "should return a nil certificaterequest when no match of revision or owner",
@@ -85,7 +86,7 @@ func TestDataForCertificate(t *testing.T) {
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1"}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-42"}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
 			}, nil),
-			want: Input{CurrentRevisionRequest: nil},
+			wantCR: nil,
 		},
 		{
 			name:           "should return the certificaterequest with revision 1 when certificate has no revision yet",
@@ -96,9 +97,9 @@ func TestDataForCertificate(t *testing.T) {
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "2"}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}}},
 			}, nil),
-			want: Input{CurrentRevisionRequest: &cmapi.CertificateRequest{
+			wantCR: &cmapi.CertificateRequest{
 				ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}},
-			}},
+			},
 		},
 		{
 			name: "should return the certificaterequest and secret and both found",
@@ -114,13 +115,11 @@ func TestDataForCertificate(t *testing.T) {
 					Annotations:     map[string]string{"cert-manager.io/certificate-revision": "1"}},
 				},
 			}, nil),
-			want: Input{
-				CurrentRevisionRequest: &cmapi.CertificateRequest{ObjectMeta: metav1.ObjectMeta{
-					OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}},
-					Annotations:     map[string]string{"cert-manager.io/certificate-revision": "1"}},
-				},
-				Secret: &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "secret-1"}},
+			wantCR: &cmapi.CertificateRequest{ObjectMeta: metav1.ObjectMeta{
+				OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}},
+				Annotations:     map[string]string{"cert-manager.io/certificate-revision": "1"}},
 			},
+			wantSecret: &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "secret-1"}},
 		},
 		{
 			name:           "should return error when multiple certificaterequests found",
@@ -130,7 +129,6 @@ func TestDataForCertificate(t *testing.T) {
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
 			}, nil),
-			want:    Input{},
 			wantErr: "multiple CertificateRequest resources exist for the current revision, not triggering new issuance until requests have been cleaned up",
 		},
 		{
@@ -138,13 +136,12 @@ func TestDataForCertificate(t *testing.T) {
 			givenCrt:          &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-1"}, Status: cmapi.CertificateStatus{Revision: ptr(1)}},
 			givenGetSecret:    mockGetSecret("", nil, nil),
 			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{}, fmt.Errorf("some error from certificates.List that is not not_found")),
-			want:              Input{},
 			wantErr:           "some error from certificates.List that is not not_found",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := DataForCertificate(context.Background(), tt.givenGetSecret(t), tt.givenListRequests(t), tt.givenCrt)
+			gotSecret, gotCR, gotErr := GetRelatedResources(context.Background(), tt.givenGetSecret(t), tt.givenListRequests(t), tt.givenCrt)
 
 			if tt.wantErr != "" {
 				assert.Error(t, gotErr)
@@ -153,9 +150,8 @@ func TestDataForCertificate(t *testing.T) {
 			}
 
 			require.NoError(t, gotErr)
-			assert.Equal(t, tt.want.CurrentRevisionRequest, got.CurrentRevisionRequest)
-			assert.Equal(t, tt.want.Secret, got.Secret)
-			assert.Equal(t, tt.givenCrt, got.Certificate, "input cert should always be equal to returned cert")
+			assert.Equal(t, tt.wantSecret, gotSecret)
+			assert.Equal(t, tt.wantCR, gotCR)
 		})
 	}
 }
