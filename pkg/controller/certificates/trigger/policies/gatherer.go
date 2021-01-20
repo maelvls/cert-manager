@@ -36,9 +36,11 @@ var (
 	NotFound = errors.New("found no certificate request with the given revision and owner")
 )
 
-// GetRelatedResources fetches the Secret and CertificateRequest associated
-// with the given Certificate. When not found, the returned Secret and/or
-// CR are simply left nil and no error is returned.
+// GetRelatedResources fetches the secret and "previous" certificate
+// request associated with the given certificate. When not found, the
+// returned secret and/or CR are simply left nil and no error is returned.
+//
+// To understand what this "previous" is about, see findPreviousCR.
 func GetRelatedResources(
 	ctx context.Context,
 	getSecret func(string) (*v1.Secret, error),
@@ -65,31 +67,37 @@ func GetRelatedResources(
 	return secret, cr, nil
 }
 
-// findCurrentCR retrieves the current certificate request associated with
-// the given certificate.
+// findPreviousCR retrieves the previous certificate request associated
+// with the given certificate. By previous, we mean that this certificate
+// request is the one that led to the current certificate becoming ready.
 //
-// A CertificateRequest is associated to a given
-// certificate when both:
-// (1) the CR is owned by the certificate, and
-// (2) the CR contains an annotation that matches the certificate's
-// status.revision, or "1" when status.revision is nil.
+// Since there is no "previous" certificate request during the first
+// issuance of the certificate, this function will return a nil certificate
+// request.
+//
+// We need to be able to retrieve the "previous" certificate request
+// because it is our only chance to check whether the current certificate
+// still matches the already-issued certificate request. If the certificate
+// request still matches the certificate, it won't have to be re-issued. If
+// the user makes changes to the certificate spec, the "previous"
+// certificate request will not match the certificate, leading to a
+// re-issuance.
 //
 // This function returns a NotFound error when no CR is found, and returns
 // Conflict when two CRs or more have been found for the certificate's
 // revision.
 func findPreviousCR(listCRs func(labels.Selector) ([]*cmapi.CertificateRequest, error), crt *cmapi.Certificate) (*cmapi.CertificateRequest, error) {
-	// Fetch the CertificateRequest resource for the current
-	// 'status.revision' if it exists; default to using revision "1" since
-	// the issuing controller may be still issuing the first revision of
-	// the certificate.
-	revision := 1
-	if crt.Status.Revision != nil {
-		revision = *crt.Status.Revision
+	// There is no previous request if the revision in the certificate's
+	// status is nil. Keep in mind that the revision is set "at the very
+	// end" of the certificate creation, i.e., after the incumbant
+	// certificate request becomes ready.
+	if crt.Status.Revision == nil {
+		return nil, nil
 	}
 	reqs, err := certificates.ListCertificateRequestsMatchingPredicates(listCRs,
 		labels.Everything(),
 		predicate.ResourceOwnedBy(crt),
-		predicate.CertificateRequestRevision(revision),
+		predicate.CertificateRequestRevision(*crt.Status.Revision),
 	)
 	if err != nil {
 		return nil, err
