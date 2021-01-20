@@ -57,8 +57,8 @@ func NewTriggerPolicyChain(c clock.Clock) Chain {
 		SecretPublicKeysMatch,
 		SecretPrivateKeyMatchesSpec,
 		SecretHasUpToDateIssuerAnnotations,
-		CurrentCertificateRequestValidForSpec,
-		CurrentCertificateNearingExpiry(c),
+		PreviousCertificateRequestValidForSpec,
+		PreviousCertificateNearingExpiry(c),
 	}
 }
 
@@ -129,7 +129,7 @@ func SecretHasUpToDateIssuerAnnotations(crt *cmapi.Certificate, secret *corev1.S
 	return "", "", false
 }
 
-func CurrentCertificateRequestValidForSpec(crt *cmapi.Certificate, secret *corev1.Secret, cr *cmapi.CertificateRequest) (string, string, bool) {
+func PreviousCertificateRequestValidForSpec(crt *cmapi.Certificate, secret *corev1.Secret, cr *cmapi.CertificateRequest) (string, string, bool) {
 	if cr == nil {
 		// Fallback to comparing the Certificate spec with the issued certificate.
 		// This case is encountered if the CertificateRequest that issued the current
@@ -172,7 +172,7 @@ func currentSecretValidForSpec(crt *cmapi.Certificate, secret *corev1.Secret, re
 	return "", "", false
 }
 
-func CurrentCertificateNearingExpiry(c clock.Clock) Func {
+func PreviousCertificateNearingExpiry(c clock.Clock) Func {
 	return func(crt *cmapi.Certificate, secret *corev1.Secret, req *cmapi.CertificateRequest) (string, string, bool) {
 		if crt.Status.RenewalTime == nil {
 			return "", "", false

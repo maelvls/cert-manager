@@ -120,15 +120,15 @@ func Test_controller_ProcessItem(t *testing.T) {
 				// Add a policy function that ensures only the input's 'certificate'
 				// field is set.
 				func(t *testing.T) policies.Func {
-					return func(crt *cmapi.Certificate, secret *v1.Secret, req *cmapi.CertificateRequest) (string, string, bool) {
+					return func(crt *cmapi.Certificate, secret *v1.Secret, prevCR *cmapi.CertificateRequest) (string, string, bool) {
 						if crt == nil {
 							t.Error("expected policy data 'Certificate' field to be set but it was not")
 						}
 						if secret != nil {
 							t.Errorf("expected policy data 'Secret' field to be unset but it was: %+v", secret)
 						}
-						if req != nil {
-							t.Errorf("expected policy data 'CurrentRevisionRequest' field to be unset but it was: %+v", req)
+						if prevCR != nil {
+							t.Errorf("expected policy data 'PreviousRevisionRequest' field to be unset but it was: %+v", prevCR)
 						}
 						return "", "", false
 					}
@@ -150,15 +150,15 @@ func Test_controller_ProcessItem(t *testing.T) {
 				// Add a policy function that ensures only the input's 'certificate'
 				// field is set.
 				func(t *testing.T) policies.Func {
-					return func(crt *cmapi.Certificate, secret *v1.Secret, req *cmapi.CertificateRequest) (string, string, bool) {
+					return func(crt *cmapi.Certificate, secret *v1.Secret, prevCR *cmapi.CertificateRequest) (string, string, bool) {
 						if crt == nil {
 							t.Error("expected policy data 'Certificate' field to be set but it was not")
 						}
 						if secret == nil {
 							t.Errorf("expected policy data 'Secret' field to be set but it was not")
 						}
-						if req != nil {
-							t.Errorf("expected policy data 'CurrentRevisionRequest' field to be unset but it was: %+v", req)
+						if prevCR != nil {
+							t.Errorf("expected policy data 'PreviousRevisionRequest' field to be unset but it was: %+v", prevCR)
 						}
 						return "", "", false
 					}
@@ -197,15 +197,15 @@ func Test_controller_ProcessItem(t *testing.T) {
 				// Add a policy function that ensures only the input's 'certificate'
 				// field is set.
 				func(t *testing.T) policies.Func {
-					return func(crt *cmapi.Certificate, secret *v1.Secret, req *cmapi.CertificateRequest) (string, string, bool) {
+					return func(crt *cmapi.Certificate, secret *v1.Secret, prevCR *cmapi.CertificateRequest) (string, string, bool) {
 						if crt == nil {
 							t.Error("expected policy data 'Certificate' field to be set but it was not")
 						}
 						if secret == nil {
 							t.Errorf("expected policy data 'Secret' field to be set but it was not")
 						}
-						if req == nil {
-							t.Errorf("expected policy data 'CurrentRevisionRequest' field to be set but it was not")
+						if prevCR == nil {
+							t.Errorf("expected policy data 'PreviousRevisionRequest' field to be set but it was not")
 						}
 						return "", "", false
 					}

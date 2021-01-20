@@ -53,7 +53,7 @@ var PolicyChain = policies.Chain{
 	policies.SecretDoesNotExist,
 	policies.SecretHasData,
 	policies.SecretPublicKeysMatch,
-	policies.CurrentCertificateRequestValidForSpec,
+	policies.PreviousCertificateRequestValidForSpec,
 	policies.CurrentCertificateHasExpired,
 }
 
@@ -133,7 +133,7 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 		return err
 	}
 
-	secret, req, err := policies.GetRelatedResources(ctx,
+	secret, prevCR, err := policies.GetRelatedResources(ctx,
 		c.secretLister.Secrets(crt.Namespace).Get,
 		c.certificateRequestLister.CertificateRequests(crt.Namespace).List,
 		crt,
@@ -142,7 +142,7 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 		return err
 	}
 
-	condition := readyCondition(c.policyChain, crt, secret, req)
+	condition := readyCondition(c.policyChain, crt, secret, prevCR)
 
 	crt = crt.DeepCopy()
 	apiutil.SetCertificateCondition(crt, condition.Type, condition.Status, condition.Reason, condition.Message)
@@ -182,8 +182,8 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 	return nil
 }
 
-func readyCondition(chain policies.Chain, crt *cmapi.Certificate, secret *v1.Secret, req *cmapi.CertificateRequest) cmapi.CertificateCondition {
-	reason, message, reissue := chain.Evaluate(crt, secret, req)
+func readyCondition(chain policies.Chain, crt *cmapi.Certificate, secret *v1.Secret, prevCR *cmapi.CertificateRequest) cmapi.CertificateCondition {
+	reason, message, reissue := chain.Evaluate(crt, secret, prevCR)
 	if !reissue {
 		return cmapi.CertificateCondition{
 			Type:    cmapi.CertificateConditionReady,
