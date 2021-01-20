@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -132,19 +133,23 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 		return err
 	}
 
-	input, err := policies.DataForCertificate(ctx, c.secretLister.Secrets(crt.Namespace).Get, c.certificateRequestLister.CertificateRequests(crt.Namespace), crt)
+	secret, req, err := policies.GetRelatedResources(ctx,
+		c.secretLister.Secrets(crt.Namespace).Get,
+		c.certificateRequestLister.CertificateRequests(crt.Namespace).List,
+		crt,
+	)
 	if err != nil {
 		return err
 	}
 
-	condition := readyCondition(c.policyChain, input)
+	condition := readyCondition(c.policyChain, crt, secret, req)
 
 	crt = crt.DeepCopy()
 	apiutil.SetCertificateCondition(crt, condition.Type, condition.Status, condition.Reason, condition.Message)
 
 	switch {
-	case input.Secret != nil && input.Secret.Data != nil:
-		x509cert, err := pki.DecodeX509CertificateBytes(input.Secret.Data[corev1.TLSCertKey])
+	case secret != nil && secret.Data != nil:
+		x509cert, err := pki.DecodeX509CertificateBytes(secret.Data[corev1.TLSCertKey])
 		if err != nil {
 			// clear status fields if we cannot decode the certificate bytes
 			crt.Status.NotAfter = nil
@@ -177,8 +182,8 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 	return nil
 }
 
-func readyCondition(chain policies.Chain, input policies.Input) cmapi.CertificateCondition {
-	reason, message, reissue := chain.Evaluate(input)
+func readyCondition(chain policies.Chain, crt *cmapi.Certificate, secret *v1.Secret, req *cmapi.CertificateRequest) cmapi.CertificateCondition {
+	reason, message, reissue := chain.Evaluate(crt, secret, req)
 	if !reissue {
 		return cmapi.CertificateCondition{
 			Type:    cmapi.CertificateConditionReady,

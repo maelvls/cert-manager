@@ -35,8 +35,8 @@ import (
 func TestGetRelatedResources(t *testing.T) {
 	tests := []struct {
 		name              string
-		givenGetSecret    func(t *testing.T) func(string) (*v1.Secret, error)
-		givenListRequests func(t *testing.T) requestListerNamespacedMock
+		givenGetSecret    func(*testing.T) func(name string) (*v1.Secret, error)
+		givenListRequests func(*testing.T) func(labels.Selector) ([]*cmapi.CertificateRequest, error)
 		givenCrt          *cmapi.Certificate
 		wantSecret        *v1.Secret
 		wantCR            *cmapi.CertificateRequest
@@ -46,28 +46,28 @@ func TestGetRelatedResources(t *testing.T) {
 			name:              "the returned secret should stay nil when it is not found",
 			givenCrt:          &cmapi.Certificate{Spec: cmapi.CertificateSpec{SecretName: "secret-1"}, ObjectMeta: metav1.ObjectMeta{Name: "a"}},
 			givenGetSecret:    mockGetSecret("secret-1", nil, apierrors.NewNotFound(cmapi.Resource("Secret"), "secret-1")),
-			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{}, nil),
+			givenListRequests: mockList("", []*cmapi.CertificateRequest{}, nil),
 			wantSecret:        nil,
 		},
 		{
 			name:              "should return an error when getsecret returns an unexpected error that isnt not_found",
 			givenCrt:          &cmapi.Certificate{Spec: cmapi.CertificateSpec{SecretName: "secret-1"}, ObjectMeta: metav1.ObjectMeta{Name: "a"}},
 			givenGetSecret:    mockGetSecret("secret-1", nil, fmt.Errorf("some error from GetSecret that is not secret not found")),
-			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{}, nil),
+			givenListRequests: mockList("", []*cmapi.CertificateRequest{}, nil),
 			wantErr:           "some error from GetSecret that is not secret not found",
 		},
 		{
 			name:              "the returned certificaterequest should stay nil when the list function returns nothing",
 			givenCrt:          &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{Name: "mycert"}},
 			givenGetSecret:    mockGetSecret("", nil, nil),
-			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{}, nil),
+			givenListRequests: mockList("", []*cmapi.CertificateRequest{}, nil),
 			wantCR:            nil,
 		},
 		{
 			name:           "should find the certificaterequest that matches revision and owner",
 			givenCrt:       &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-7"}, Status: cmapi.CertificateStatus{Revision: ptr(7)}},
 			givenGetSecret: mockGetSecret("", nil, nil),
-			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
+			givenListRequests: mockList("", []*cmapi.CertificateRequest{
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-4", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "4"}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-7", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "7"}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-9", Controller: pointer.BoolPtr(true)}}}},
@@ -80,7 +80,7 @@ func TestGetRelatedResources(t *testing.T) {
 			name:           "should return a nil certificaterequest when no match of revision or owner",
 			givenCrt:       &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-1"}, Status: cmapi.CertificateStatus{Revision: ptr(1)}},
 			givenGetSecret: mockGetSecret("", nil, nil),
-			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
+			givenListRequests: mockList("", []*cmapi.CertificateRequest{
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "2"}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1"}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
@@ -92,7 +92,7 @@ func TestGetRelatedResources(t *testing.T) {
 			name:           "should return the certificaterequest with revision 1 when certificate has no revision yet",
 			givenCrt:       &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-1"}, Status: cmapi.CertificateStatus{Revision: nil}},
 			givenGetSecret: mockGetSecret("", nil, nil),
-			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
+			givenListRequests: mockList("", []*cmapi.CertificateRequest{
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "2"}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}}},
@@ -109,7 +109,7 @@ func TestGetRelatedResources(t *testing.T) {
 				Status:     cmapi.CertificateStatus{Revision: ptr(1)},
 			},
 			givenGetSecret: mockGetSecret("secret-1", &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "secret-1"}}, nil),
-			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
+			givenListRequests: mockList("", []*cmapi.CertificateRequest{
 				{ObjectMeta: metav1.ObjectMeta{
 					OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}},
 					Annotations:     map[string]string{"cert-manager.io/certificate-revision": "1"}},
@@ -125,7 +125,7 @@ func TestGetRelatedResources(t *testing.T) {
 			name:           "should return error when multiple certificaterequests found",
 			givenCrt:       &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-1"}, Status: cmapi.CertificateStatus{Revision: ptr(1)}},
 			givenGetSecret: mockGetSecret("", nil, nil),
-			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{
+			givenListRequests: mockList("", []*cmapi.CertificateRequest{
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
 				{ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{UID: "uid-1", Controller: pointer.BoolPtr(true)}}, Annotations: map[string]string{"cert-manager.io/certificate-revision": "1"}}},
 			}, nil),
@@ -135,7 +135,7 @@ func TestGetRelatedResources(t *testing.T) {
 			name:              "should return error when the list func returns an error",
 			givenCrt:          &cmapi.Certificate{ObjectMeta: metav1.ObjectMeta{UID: "uid-1"}, Status: cmapi.CertificateStatus{Revision: ptr(1)}},
 			givenGetSecret:    mockGetSecret("", nil, nil),
-			givenListRequests: mockRequestLister("", []*cmapi.CertificateRequest{}, fmt.Errorf("some error from certificates.List that is not not_found")),
+			givenListRequests: mockList("", []*cmapi.CertificateRequest{}, fmt.Errorf("some error from certificates.List that is not not_found")),
 			wantErr:           "some error from certificates.List that is not not_found",
 		},
 	}
@@ -169,29 +169,15 @@ func ptr(i int) *int {
 	return &i
 }
 
-type requestListerNamespacedMock struct {
-	t                      *testing.T
-	expectedListSelector   string
-	returnListCertRequests []*cmapi.CertificateRequest
-	returnListErr          error
-}
-
-func (mock requestListerNamespacedMock) List(got labels.Selector) (ret []*cmapi.CertificateRequest, err error) {
-	assert.Equal(mock.t, mock.expectedListSelector, got.String())
-	return mock.returnListCertRequests, mock.returnListErr
-}
-
-func (mock requestListerNamespacedMock) Get(name string) (cr *cmapi.CertificateRequest, e error) {
-	mock.t.Error("CertificateRequests(namespace).Get/List are not expected to be called")
-	return nil, nil
-}
-
 // The expectedSelector is a label selector of the form:
 //     partition in (customerA, customerB),environment!=qa
 // as detailed in
 // https://kubernetes.io/docs/concepts/overview/working-with-objects/labels
-func mockRequestLister(expectedSelector string, returnList []*cmapi.CertificateRequest, returnListErr error) func(*testing.T) requestListerNamespacedMock {
-	return func(t *testing.T) requestListerNamespacedMock {
-		return requestListerNamespacedMock{t: t, expectedListSelector: expectedSelector, returnListCertRequests: returnList, returnListErr: returnListErr}
+func mockList(expectedSelector string, returnCertRequests []*cmapi.CertificateRequest, returnErr error) func(*testing.T) func(labels.Selector) ([]*cmapi.CertificateRequest, error) {
+	return func(t *testing.T) func(labels.Selector) ([]*cmapi.CertificateRequest, error) {
+		return func(got labels.Selector) ([]*cmapi.CertificateRequest, error) {
+			assert.Equal(t, expectedSelector, got.String())
+			return returnCertRequests, returnErr
+		}
 	}
 }

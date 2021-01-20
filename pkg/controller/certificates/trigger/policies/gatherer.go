@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	cmapi "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
-	cmlisters "github.com/jetstack/cert-manager/pkg/client/listers/certmanager/v1"
 	"github.com/jetstack/cert-manager/pkg/controller/certificates"
 	logf "github.com/jetstack/cert-manager/pkg/logs"
 	"github.com/jetstack/cert-manager/pkg/util/predicate"
@@ -40,20 +39,25 @@ var (
 // GetRelatedResources fetches the Secret and CertificateRequest associated
 // with the given Certificate. When not found, the returned Secret and/or
 // CR are simply left nil and no error is returned.
-func GetRelatedResources(ctx context.Context, getSecret func(string) (*v1.Secret, error), listCR cmlisters.CertificateRequestNamespaceLister, crt *cmapi.Certificate) (*v1.Secret, *cmapi.CertificateRequest, error) {
+func GetRelatedResources(
+	ctx context.Context,
+	getSecret func(string) (*v1.Secret, error),
+	listCRs func(labels.Selector) ([]*cmapi.CertificateRequest, error),
+	cert *cmapi.Certificate,
+) (*v1.Secret, *cmapi.CertificateRequest, error) {
 	log := logf.FromContext(ctx)
 
-	secret, err := getSecret(crt.Spec.SecretName)
+	secret, err := getSecret(cert.Spec.SecretName)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, nil, err
 	}
 
-	cr, err := findPreviousCR(listCR, crt)
+	cr, err := findPreviousCR(listCRs, cert)
 	switch {
 	case err == Conflict:
 		return nil, nil, fmt.Errorf("multiple CertificateRequest resources exist for the current revision, not triggering new issuance until requests have been cleaned up")
 	case err == NotFound:
-		log.V(logf.DebugLevel).Info("Found no CertificateRequest resources owned by this Certificate for the current revision", "revision", crt.Status.Revision)
+		log.V(logf.DebugLevel).Info("Found no CertificateRequest resources owned by this Certificate for the current revision", "revision", cert.Status.Revision)
 	case err != nil:
 		return nil, nil, err
 	}
@@ -73,7 +77,7 @@ func GetRelatedResources(ctx context.Context, getSecret func(string) (*v1.Secret
 // This function returns a NotFound error when no CR is found, and returns
 // Conflict when two CRs or more have been found for the certificate's
 // revision.
-func findPreviousCR(lister cmlisters.CertificateRequestNamespaceLister, crt *cmapi.Certificate) (*cmapi.CertificateRequest, error) {
+func findPreviousCR(listCRs func(labels.Selector) ([]*cmapi.CertificateRequest, error), crt *cmapi.Certificate) (*cmapi.CertificateRequest, error) {
 	// Fetch the CertificateRequest resource for the current
 	// 'status.revision' if it exists; default to using revision "1" since
 	// the issuing controller may be still issuing the first revision of
@@ -82,7 +86,7 @@ func findPreviousCR(lister cmlisters.CertificateRequestNamespaceLister, crt *cma
 	if crt.Status.Revision != nil {
 		revision = *crt.Status.Revision
 	}
-	reqs, err := certificates.ListCertificateRequestsMatchingPredicates(lister,
+	reqs, err := certificates.ListCertificateRequestsMatchingPredicates(listCRs,
 		labels.Everything(),
 		predicate.ResourceOwnedBy(crt),
 		predicate.CertificateRequestRevision(revision),

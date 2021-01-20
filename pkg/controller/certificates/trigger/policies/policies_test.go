@@ -455,11 +455,7 @@ func TestDefaultPolicyChain(t *testing.T) {
 	policyChain := NewTriggerPolicyChain(clock)
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			reason, message, reissue := policyChain.Evaluate(Input{
-				Certificate:            test.certificate,
-				CurrentRevisionRequest: test.request,
-				Secret:                 test.secret,
-			})
+			reason, message, reissue := policyChain.Evaluate(test.certificate, test.secret, test.request)
 
 			if test.reason != reason {
 				t.Errorf("unexpected 'reason' exp=%s, got=%s", test.reason, reason)

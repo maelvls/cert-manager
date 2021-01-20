@@ -32,7 +32,7 @@ import (
 // A Func evaluates the given input data and decides whether a
 // re-issuance is required, returning additional human readable information
 // in the 'reason' and 'message' return parameters if so.
-type Func func(*cmapi.Certificate, *cmapi.CertificateRequest, *corev1.Secret) (reason, message string, reissue bool)
+type Func func(*cmapi.Certificate, *corev1.Secret, *cmapi.CertificateRequest) (reason, message string, reissue bool)
 
 // A chain of PolicyFuncs to be evaluated in order.
 type Chain []Func
@@ -40,9 +40,9 @@ type Chain []Func
 // Evaluate will evaluate the entire policy chain using the provided input.
 // As soon as a policy function indicates a re-issuance is required, the method
 // will return and not evaluate the rest of the chain.
-func (c Chain) Evaluate(crt *cmapi.Certificate, cr *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+func (c Chain) Evaluate(crt *cmapi.Certificate, secret *corev1.Secret, req *cmapi.CertificateRequest) (string, string, bool) {
 	for _, policyFunc := range c {
-		reason, message, reissue := policyFunc(crt, cr, secret)
+		reason, message, reissue := policyFunc(crt, secret, req)
 		if reissue {
 			return reason, message, reissue
 		}
@@ -62,14 +62,14 @@ func NewTriggerPolicyChain(c clock.Clock) Chain {
 	}
 }
 
-func SecretDoesNotExist(_ *cmapi.Certificate, _ *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+func SecretDoesNotExist(_ *cmapi.Certificate, secret *corev1.Secret, _ *cmapi.CertificateRequest) (string, string, bool) {
 	if secret == nil {
 		return "DoesNotExist", "Issuing certificate as Secret does not exist", true
 	}
 	return "", "", false
 }
 
-func SecretHasData(_ *cmapi.Certificate, _ *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+func SecretHasData(_ *cmapi.Certificate, secret *corev1.Secret, _ *cmapi.CertificateRequest) (string, string, bool) {
 	if secret.Data == nil {
 		return "MissingData", "Issuing certificate as Secret does not contain any data", true
 	}
@@ -84,7 +84,7 @@ func SecretHasData(_ *cmapi.Certificate, _ *cmapi.CertificateRequest, secret *co
 	return "", "", false
 }
 
-func SecretPublicKeysMatch(_ *cmapi.Certificate, _ *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+func SecretPublicKeysMatch(_ *cmapi.Certificate, secret *corev1.Secret, _ *cmapi.CertificateRequest) (string, string, bool) {
 	pkData := secret.Data[corev1.TLSPrivateKeyKey]
 	certData := secret.Data[corev1.TLSCertKey]
 	// TODO: replace this with a generic decoder that can handle different
@@ -96,7 +96,7 @@ func SecretPublicKeysMatch(_ *cmapi.Certificate, _ *cmapi.CertificateRequest, se
 	return "", "", false
 }
 
-func SecretPrivateKeyMatchesSpec(crt *cmapi.Certificate, _ *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+func SecretPrivateKeyMatchesSpec(crt *cmapi.Certificate, secret *corev1.Secret, _ *cmapi.CertificateRequest) (string, string, bool) {
 	if secret.Data == nil || len(secret.Data[corev1.TLSPrivateKeyKey]) == 0 {
 		return "SecretMismatch", fmt.Sprintf("Existing issued Secret does not contain private key data"), true
 	}
@@ -117,7 +117,7 @@ func SecretPrivateKeyMatchesSpec(crt *cmapi.Certificate, _ *cmapi.CertificateReq
 	return "", "", false
 }
 
-func SecretHasUpToDateIssuerAnnotations(crt *cmapi.Certificate, _ *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+func SecretHasUpToDateIssuerAnnotations(crt *cmapi.Certificate, secret *corev1.Secret, _ *cmapi.CertificateRequest) (string, string, bool) {
 	name := secret.Annotations[cmapi.IssuerNameAnnotationKey]
 	kind := secret.Annotations[cmapi.IssuerKindAnnotationKey]
 	group := secret.Annotations[cmapi.IssuerGroupAnnotationKey]
@@ -129,7 +129,7 @@ func SecretHasUpToDateIssuerAnnotations(crt *cmapi.Certificate, _ *cmapi.Certifi
 	return "", "", false
 }
 
-func CurrentCertificateRequestValidForSpec(crt *cmapi.Certificate, cr *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+func CurrentCertificateRequestValidForSpec(crt *cmapi.Certificate, secret *corev1.Secret, cr *cmapi.CertificateRequest) (string, string, bool) {
 	if cr == nil {
 		// Fallback to comparing the Certificate spec with the issued certificate.
 		// This case is encountered if the CertificateRequest that issued the current
@@ -137,7 +137,7 @@ func CurrentCertificateRequestValidForSpec(crt *cmapi.Certificate, cr *cmapi.Cer
 		// This comparison is a lot less robust than comparing against the CertificateRequest
 		// as it has to tolerate/permit certain fields being overridden or ignored by the
 		// signer/issuer implementation.
-		return currentSecretValidForSpec(crt, cr, secret)
+		return currentSecretValidForSpec(crt, secret, cr)
 	}
 
 	violations, err := certificates.RequestMatchesSpec(cr, crt.Spec)
@@ -156,7 +156,7 @@ func CurrentCertificateRequestValidForSpec(crt *cmapi.Certificate, cr *cmapi.Cer
 // currentSecretValidForSpec is not actually registered as part of the policy chain
 // and is instead called by currentCertificateRequestValidForSpec if no there
 // is no existing CertificateRequest resource.
-func currentSecretValidForSpec(crt *cmapi.Certificate, cr *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+func currentSecretValidForSpec(crt *cmapi.Certificate, secret *corev1.Secret, req *cmapi.CertificateRequest) (string, string, bool) {
 	violations, err := certificates.SecretDataAltNamesMatchSpec(secret, crt.Spec)
 	if err != nil {
 		// This case should never be reached as we already check the certificate data can
@@ -173,7 +173,7 @@ func currentSecretValidForSpec(crt *cmapi.Certificate, cr *cmapi.CertificateRequ
 }
 
 func CurrentCertificateNearingExpiry(c clock.Clock) Func {
-	return func(crt *cmapi.Certificate, cr *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+	return func(crt *cmapi.Certificate, secret *corev1.Secret, req *cmapi.CertificateRequest) (string, string, bool) {
 		if crt.Status.RenewalTime == nil {
 			return "", "", false
 		}
@@ -189,7 +189,7 @@ func CurrentCertificateNearingExpiry(c clock.Clock) Func {
 
 // CurrentCertificateHasExpired is used exclusively to check if the current
 // issued certificate has actually expired rather than just nearing expiry.
-func CurrentCertificateHasExpired(crt *cmapi.Certificate, cr *cmapi.CertificateRequest, secret *corev1.Secret) (string, string, bool) {
+func CurrentCertificateHasExpired(crt *cmapi.Certificate, secret *corev1.Secret, req *cmapi.CertificateRequest) (string, string, bool) {
 	certData := secret.Data[corev1.TLSCertKey]
 	// TODO: replace this with a generic decoder that can handle different
 	//  formats such as JKS, P12 etc (i.e. add proper support for keystores)

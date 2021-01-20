@@ -57,10 +57,10 @@ func (c *controller) ensureTemporaryCertificate(ctx context.Context, crt *cmapi.
 	if err != nil && !apierrors.IsNotFound(err) {
 		return false, err
 	}
-	input := policies.Input{Secret: secret}
+
 	// If the target Secret exists with a signed certificate and matching private
 	// key, do not issue.
-	if _, _, invalid := temporaryCertificatePolicyChain.Evaluate(input); !invalid {
+	if _, _, invalid := temporaryCertificatePolicyChain.Evaluate(nil, secret, nil); !invalid {
 		return false, nil
 	}
 

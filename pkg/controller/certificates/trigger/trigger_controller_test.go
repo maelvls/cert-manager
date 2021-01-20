@@ -22,6 +22,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	coretesting "k8s.io/client-go/testing"
 	fakeclock "k8s.io/utils/clock/testing"
@@ -119,15 +120,15 @@ func Test_controller_ProcessItem(t *testing.T) {
 				// Add a policy function that ensures only the input's 'certificate'
 				// field is set.
 				func(t *testing.T) policies.Func {
-					return func(input policies.Input) (string, string, bool) {
-						if input.Certificate == nil {
+					return func(crt *cmapi.Certificate, secret *v1.Secret, req *cmapi.CertificateRequest) (string, string, bool) {
+						if crt == nil {
 							t.Error("expected policy data 'Certificate' field to be set but it was not")
 						}
-						if input.Secret != nil {
-							t.Errorf("expected policy data 'Secret' field to be unset but it was: %+v", input.Secret)
+						if secret != nil {
+							t.Errorf("expected policy data 'Secret' field to be unset but it was: %+v", secret)
 						}
-						if input.CurrentRevisionRequest != nil {
-							t.Errorf("expected policy data 'CurrentRevisionRequest' field to be unset but it was: %+v", input.CurrentRevisionRequest)
+						if req != nil {
+							t.Errorf("expected policy data 'CurrentRevisionRequest' field to be unset but it was: %+v", req)
 						}
 						return "", "", false
 					}
@@ -149,15 +150,15 @@ func Test_controller_ProcessItem(t *testing.T) {
 				// Add a policy function that ensures only the input's 'certificate'
 				// field is set.
 				func(t *testing.T) policies.Func {
-					return func(input policies.Input) (string, string, bool) {
-						if input.Certificate == nil {
+					return func(crt *cmapi.Certificate, secret *v1.Secret, req *cmapi.CertificateRequest) (string, string, bool) {
+						if crt == nil {
 							t.Error("expected policy data 'Certificate' field to be set but it was not")
 						}
-						if input.Secret == nil {
+						if secret == nil {
 							t.Errorf("expected policy data 'Secret' field to be set but it was not")
 						}
-						if input.CurrentRevisionRequest != nil {
-							t.Errorf("expected policy data 'CurrentRevisionRequest' field to be unset but it was: %+v", input.CurrentRevisionRequest)
+						if req != nil {
+							t.Errorf("expected policy data 'CurrentRevisionRequest' field to be unset but it was: %+v", req)
 						}
 						return "", "", false
 					}
@@ -196,14 +197,14 @@ func Test_controller_ProcessItem(t *testing.T) {
 				// Add a policy function that ensures only the input's 'certificate'
 				// field is set.
 				func(t *testing.T) policies.Func {
-					return func(input policies.Input) (string, string, bool) {
-						if input.Certificate == nil {
+					return func(crt *cmapi.Certificate, secret *v1.Secret, req *cmapi.CertificateRequest) (string, string, bool) {
+						if crt == nil {
 							t.Error("expected policy data 'Certificate' field to be set but it was not")
 						}
-						if input.Secret == nil {
+						if secret == nil {
 							t.Errorf("expected policy data 'Secret' field to be set but it was not")
 						}
-						if input.CurrentRevisionRequest == nil {
+						if req == nil {
 							t.Errorf("expected policy data 'CurrentRevisionRequest' field to be set but it was not")
 						}
 						return "", "", false
@@ -344,7 +345,7 @@ func Test_controller_ProcessItem(t *testing.T) {
 			w.policyChain = []policies.Func{}
 			// Record whether the policy chain was evaluated
 			evaluated := false
-			w.policyChain = append(w.policyChain, func(_ policies.Input) (string, string, bool) {
+			w.policyChain = append(w.policyChain, func(_ *cmapi.Certificate, _ *v1.Secret, _ *cmapi.CertificateRequest) (string, string, bool) {
 				evaluated = true
 				return "", "", false
 			})
@@ -353,7 +354,7 @@ func Test_controller_ProcessItem(t *testing.T) {
 			// If the chain should trigger an issuance, inject an 'always reissue'
 			// policyFunc at the end of the chain
 			if test.chainShouldTriggerIssuance {
-				w.policyChain = append(w.policyChain, func(_ policies.Input) (string, string, bool) {
+				w.policyChain = append(w.policyChain, func(_ *cmapi.Certificate, _ *v1.Secret, _ *cmapi.CertificateRequest) (string, string, bool) {
 					return forceTriggeredReason, forceTriggeredMessage, true
 				})
 			}

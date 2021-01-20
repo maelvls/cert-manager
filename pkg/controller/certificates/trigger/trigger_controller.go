@@ -148,14 +148,18 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 		return nil
 	}
 
-	input, err := policies.DataForCertificate(ctx, c.secretLister.Secrets(crt.Namespace).Get, c.certificateRequestLister.CertificateRequests(crt.Namespace), crt)
+	secret, req, err := policies.GetRelatedResources(ctx,
+		c.secretLister.Secrets(crt.Namespace).Get,
+		c.certificateRequestLister.CertificateRequests(crt.Namespace).List,
+		crt,
+	)
 	if err != nil {
 		return err
 	}
 
 	// Back off from re-issuing immediately when the certificate has been
 	// in failing mode for less than 1 hour.
-	backoff, delay := shouldBackoffReissuingOnFailure(log, c.clock, input.Certificate)
+	backoff, delay := shouldBackoffReissuingOnFailure(log, c.clock, crt)
 	if backoff {
 		log.V(logf.InfoLevel).Info("Not re-issuing certificate as an attempt has been made in the last hour", "retry_delay", delay)
 		c.scheduleRecheckOfCertificateIfRequired(log, key, delay)
@@ -168,7 +172,7 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 		c.scheduleRecheckOfCertificateIfRequired(log, key, crt.Status.RenewalTime.Time.Sub(c.clock.Now()))
 	}
 
-	reason, message, reissue := c.policyChain.Evaluate(input)
+	reason, message, reissue := c.policyChain.Evaluate(crt, secret, req)
 	if !reissue {
 		// no re-issuance required, return early
 		return nil
