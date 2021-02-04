@@ -21,14 +21,18 @@ import (
 	"context"
 	"crypto"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/pem"
 	"errors"
+	"math/big"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -40,10 +44,14 @@ import (
 	"github.com/jetstack/cert-manager/pkg/apis/certmanager"
 	cmapi "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	"github.com/jetstack/cert-manager/pkg/controller"
 	"github.com/jetstack/cert-manager/pkg/controller/certificaterequests"
+	"github.com/jetstack/cert-manager/pkg/controller/certificaterequests/util"
+	controllertest "github.com/jetstack/cert-manager/pkg/controller/test"
 	testpkg "github.com/jetstack/cert-manager/pkg/controller/test"
 	"github.com/jetstack/cert-manager/pkg/util/pki"
 	"github.com/jetstack/cert-manager/test/unit/gen"
+	"github.com/jetstack/cert-manager/test/unit/listers"
 	testlisters "github.com/jetstack/cert-manager/test/unit/listers"
 )
 
@@ -305,7 +313,7 @@ func TestSign(t *testing.T) {
 				},
 			},
 		},
-		"a successful signing should set condition to Ready": {
+		"a successful signing with ocspServers set should set condition to Ready": {
 			certificateRequest: baseCR.DeepCopy(),
 			templateGenerator: func(cr *cmapi.CertificateRequest) (*x509.Certificate, error) {
 				_, err := pki.GenerateTemplateFromCertificateRequest(cr)
@@ -390,4 +398,96 @@ func runTest(t *testing.T, test testT) {
 	}
 
 	test.builder.CheckAndFinish(err)
+}
+
+func TestCA_Sign(t *testing.T) {
+	caCrt, caKey := mustGenerateTLSAssets(t)
+	tests := map[string]struct {
+		givenNamespace string
+		givenSecret    *corev1.Secret
+		givenCR        *cmapi.CertificateRequest
+		givenIssuer    cmapi.GenericIssuer
+		wantCert       *x509.Certificate
+		wantErr        string
+	}{
+		"a": {
+			givenIssuer: &cmapi.Issuer{
+				Spec: cmapi.IssuerSpec{IssuerConfig: cmapi.IssuerConfig{
+					CA: &cmapi.CAIssuer{
+						SecretName:  "secret-1",
+						OCSPServers: []string{"http://ocsp-v3.example.org"},
+					},
+				}},
+			},
+			givenCR: gen.CertificateRequestFrom(gen.CertificateRequest("cert-1")),
+			givenSecret: gen.SecretFrom(gen.Secret("secret-1"),
+				gen.SetSecretNamespace("default"),
+				gen.SetSecretData(map[string][]byte{
+					"tls.key": caKey,
+					"tls.crt": caCrt,
+				}),
+			),
+			givenNamespace: "default",
+			wantCert:       &x509.Certificate{},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			rec := &controllertest.FakeRecorder{}
+
+			c := &CA{
+				issuerOptions: controller.IssuerOptions{
+					ClusterResourceNamespace:        "",
+					ClusterIssuerAmbientCredentials: false,
+					IssuerAmbientCredentials:        false,
+				},
+				reporter: util.NewReporter(fakeclock.NewFakeClock(time.Date(2021, 02, 30, 16, 35, 00, 00, nil)), rec),
+				secretsLister: listers.FakeSecretListerFrom(listers.NewFakeSecretLister(),
+					listers.SetFakeSecretNamespaceListerGet(test.givenSecret, nil),
+				),
+			}
+
+			gotResp, gotErr := c.Sign(context.Background(), test.givenCR, test.givenIssuer)
+			if test.wantErr != "" {
+				assert.EqualError(t, gotErr, test.wantErr)
+				return
+			}
+
+			gotCert, err := pki.DecodeX509CertificateBytes(gotResp.Certificate)
+			require.NoError(t, err)
+
+			assert.Equal(t, test.wantCert, gotCert)
+		})
+	}
+}
+
+// Returns a PEM-formated CA certificate and its key.
+func mustGenerateTLSAssets(t *testing.T) (caCrt, caKey []byte) {
+	caPK, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	rootCA := &x509.Certificate{
+		Version:               3,
+		BasicConstraintsValid: true,
+		SerialNumber:          big.NewInt(1658),
+		PublicKeyAlgorithm:    x509.RSA,
+		Subject: pkix.Name{
+			CommonName: "testing-ca",
+		},
+		NotBefore: time.Now().Add(-1 * time.Hour),
+		NotAfter:  time.Now().Add(time.Hour),
+		KeyUsage:  x509.KeyUsageCertSign | x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		IsCA:      true,
+	}
+	rootCADER, err := x509.CreateCertificate(rand.Reader, rootCA, rootCA, caPK.Public(), caPK)
+	require.NoError(t, err)
+	rootCA, err = x509.ParseCertificate(rootCADER)
+	require.NoError(t, err)
+
+	// encoding PKI data to PEM
+	caKey, err = pki.EncodePKCS8PrivateKey(caPK)
+	require.NoError(t, err)
+	caCrt, err = pki.EncodeX509(rootCA)
+	require.NoError(t, err)
+
+	return caCrt, caKey
 }
