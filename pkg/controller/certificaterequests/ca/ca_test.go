@@ -49,6 +49,7 @@ import (
 	"github.com/jetstack/cert-manager/pkg/controller/certificaterequests/util"
 	controllertest "github.com/jetstack/cert-manager/pkg/controller/test"
 	testpkg "github.com/jetstack/cert-manager/pkg/controller/test"
+	"github.com/jetstack/cert-manager/pkg/issuer"
 	"github.com/jetstack/cert-manager/pkg/util/pki"
 	"github.com/jetstack/cert-manager/test/unit/gen"
 	"github.com/jetstack/cert-manager/test/unit/listers"
@@ -402,15 +403,25 @@ func runTest(t *testing.T, test testT) {
 
 func TestCA_Sign(t *testing.T) {
 	caCrt, caKey := mustGenerateTLSAssets(t)
+	// Build root RSA CA
+	skRSA, err := pki.GenerateRSAPrivateKey(2048)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	skRSAPEM := pki.EncodePKCS1PrivateKey(skRSA)
+	rsaCSR := generateCSR(t, skRSA)
+
 	tests := map[string]struct {
 		givenNamespace string
 		givenSecret    *corev1.Secret
 		givenCR        *cmapi.CertificateRequest
 		givenIssuer    cmapi.GenericIssuer
-		wantCert       *x509.Certificate
+		wantIssueResp  *issuer.IssueResponse
 		wantErr        string
 	}{
-		"a": {
+		"nil issue response when": {
 			givenIssuer: &cmapi.Issuer{
 				Spec: cmapi.IssuerSpec{IssuerConfig: cmapi.IssuerConfig{
 					CA: &cmapi.CAIssuer{
@@ -428,7 +439,33 @@ func TestCA_Sign(t *testing.T) {
 				}),
 			),
 			givenNamespace: "default",
-			wantCert:       &x509.Certificate{},
+			wantIssueResp:  nil,
+		},
+		"issued": {
+			givenIssuer: gen.Issuer("issuer-1", gen.SetIssuerCA(cmapi.CAIssuer{
+				SecretName:  "secret-1",
+				OCSPServers: []string{"http://ocsp-v3.example.org"},
+			})),
+			givenCR: gen.CertificateRequest("cr-1",
+				gen.SetCertificateRequestIsCA(true),
+				gen.SetCertificateRequestCSR(rsaCSR),
+				gen.SetCertificateRequestIssuer(cmmeta.ObjectReference{
+					Name:  "issuer-1",
+					Group: certmanager.GroupName,
+					Kind:  "Issuer",
+				}),
+				gen.SetCertificateRequestDuration(&metav1.Duration{Duration: time.Hour * 24 * 60}),
+			),
+
+			givenSecret: gen.SecretFrom(gen.Secret("secret-1"),
+				gen.SetSecretNamespace("default"),
+				gen.SetSecretData(map[string][]byte{
+					"tls.key": caKey,
+					"tls.crt": caCrt,
+				}),
+			),
+			givenNamespace: "default",
+			wantIssueResp:  nil,
 		},
 	}
 	for name, test := range tests {
@@ -441,22 +478,29 @@ func TestCA_Sign(t *testing.T) {
 					ClusterIssuerAmbientCredentials: false,
 					IssuerAmbientCredentials:        false,
 				},
-				reporter: util.NewReporter(fakeclock.NewFakeClock(time.Date(2021, 02, 30, 16, 35, 00, 00, nil)), rec),
+				reporter: util.NewReporter(fixedClock, rec),
 				secretsLister: listers.FakeSecretListerFrom(listers.NewFakeSecretLister(),
 					listers.SetFakeSecretNamespaceListerGet(test.givenSecret, nil),
 				),
+				templateGenerator: pki.GenerateTemplateFromCertificateRequest,
 			}
 
-			gotResp, gotErr := c.Sign(context.Background(), test.givenCR, test.givenIssuer)
+			gotIssueResp, gotErr := c.Sign(context.Background(), test.givenCR, test.givenIssuer)
 			if test.wantErr != "" {
 				assert.EqualError(t, gotErr, test.wantErr)
 				return
 			}
+			require.NoError(t, gotErr)
 
-			gotCert, err := pki.DecodeX509CertificateBytes(gotResp.Certificate)
+			if test.wantIssueResp == nil {
+				assert.Nil(t, gotIssueResp)
+				return
+			}
+
+			gotCert, err := pki.DecodeX509CertificateBytes(gotIssueResp.Certificate)
 			require.NoError(t, err)
 
-			assert.Equal(t, test.wantCert, gotCert)
+			assert.Equal(t, test.wantIssueResp, gotCert)
 		})
 	}
 }
