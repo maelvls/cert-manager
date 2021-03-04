@@ -37,7 +37,7 @@ func buildCertificate(cn string, dnsNames ...string) *cmapi.Certificate {
 	}
 }
 
-func TestBuildUsages(t *testing.T) {
+func TestBuildKeyUsages(t *testing.T) {
 	type testT struct {
 		name                string
 		usages              []cmapi.KeyUsage
@@ -112,7 +112,7 @@ func TestBuildUsages(t *testing.T) {
 	}
 }
 
-func TestCommonNameForCertificate(t *testing.T) {
+func Test_buildCertificate_CommonNames(t *testing.T) {
 	type testT struct {
 		name        string
 		crtCN       string
@@ -156,7 +156,7 @@ func TestCommonNameForCertificate(t *testing.T) {
 	}
 }
 
-func TestDNSNamesForCertificate(t *testing.T) {
+func Test_buildCertificate_DNSNames(t *testing.T) {
 	type testT struct {
 		name           string
 		crtCN          string
@@ -218,7 +218,7 @@ func TestDNSNamesForCertificate(t *testing.T) {
 	}
 }
 
-func TestSignatureAlgorithmForCertificate(t *testing.T) {
+func TestSignatureAlgorithm(t *testing.T) {
 	type testT struct {
 		name            string
 		keyAlgo         cmapi.PrivateKeyAlgorithm
@@ -340,7 +340,7 @@ func TestSignatureAlgorithmForCertificate(t *testing.T) {
 	}
 }
 
-func TestRemoveDuplicates(t *testing.T) {
+func Test_removeDuplicates(t *testing.T) {
 	type testT struct {
 		input  []string
 		output []string
