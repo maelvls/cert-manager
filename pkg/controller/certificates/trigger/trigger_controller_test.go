@@ -23,6 +23,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	coretesting "k8s.io/client-go/testing"
 	fakeclock "k8s.io/utils/clock/testing"
 
@@ -30,6 +31,7 @@ import (
 	cmapi "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	controllerpkg "github.com/jetstack/cert-manager/pkg/controller"
+	internaltest "github.com/jetstack/cert-manager/pkg/controller/certificates/internal/test"
 	"github.com/jetstack/cert-manager/pkg/controller/certificates/trigger/policies"
 	testpkg "github.com/jetstack/cert-manager/pkg/controller/test"
 	"github.com/jetstack/cert-manager/test/unit/gen"
@@ -318,6 +320,65 @@ func Test_controller_ProcessItem(t *testing.T) {
 				},
 			},
 		},
+		"should set the Issuing condition if the last failure is set but the is a mismatch between the certificate and request": {
+			certificate: gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example.com"),
+				gen.SetCertificateRevision(1),
+				gen.SetCertificateLastFailureTime(metav1.NewTime(now)),
+			),
+			requests: []*cmapi.CertificateRequest{createCertificateRequestOrPanic(
+				gen.Certificate("test",
+					gen.SetCertificateNamespace("testns"),
+					gen.SetCertificateUID(types.UID("test-uid")),
+					gen.SetCertificateDNSNames("example2.com"), // Mismatch here.
+					gen.SetCertificateRevision(1),
+					gen.SetCertificateLastFailureTime(metav1.NewTime(now)),
+				)),
+			},
+			chainShouldEvaluate:        true,
+			chainShouldTriggerIssuance: true,
+			expectedEvent:              "Normal Issuing Re-issuance forced by unit test case",
+			expectedConditions: []cmapi.CertificateCondition{
+				{
+					Type:               cmapi.CertificateConditionIssuing,
+					Status:             cmmeta.ConditionTrue,
+					Reason:             forceTriggeredReason,
+					Message:            forceTriggeredMessage,
+					LastTransitionTime: &metaNow,
+				},
+			},
+		},
+		"should set the Issuing condition if the last failure is set and that the revision has not be set yet": {
+			certificate: gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example.com"),
+				gen.SetCertificateLastFailureTime(metav1.NewTime(now)),
+			),
+			requests: []*cmapi.CertificateRequest{createCertificateRequestOrPanic(
+				gen.Certificate("test",
+					gen.SetCertificateNamespace("testns"),
+					gen.SetCertificateUID(types.UID("test-uid")),
+					gen.SetCertificateDNSNames("example2.com"), // Mismatch here.
+					gen.SetCertificateRevision(1),
+					gen.SetCertificateLastFailureTime(metav1.NewTime(now)),
+				)),
+			},
+			chainShouldEvaluate:        true,
+			chainShouldTriggerIssuance: true,
+			expectedEvent:              "Normal Issuing Re-issuance forced by unit test case",
+			expectedConditions: []cmapi.CertificateCondition{
+				{
+					Type:               cmapi.CertificateConditionIssuing,
+					Status:             cmmeta.ConditionTrue,
+					Reason:             forceTriggeredReason,
+					Message:            forceTriggeredMessage,
+					LastTransitionTime: &metaNow,
+				},
+			},
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -505,4 +566,13 @@ func Test_shouldBackoffReissuingOnFailure(t *testing.T) {
 			assert.Equal(t, tt.wantDelay, gotDelay)
 		})
 	}
+}
+
+// We don't need to full bundle, just a simple CertificateRequest.
+func createCertificateRequestOrPanic(crt *cmapi.Certificate) *cmapi.CertificateRequest {
+	bundle, err := internaltest.CreateCryptoBundle(crt, fakeclock.NewFakeClock(time.Now()))
+	if err != nil {
+		panic(err)
+	}
+	return bundle.CertificateRequest
 }
