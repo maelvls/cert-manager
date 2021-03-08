@@ -160,7 +160,7 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 
 	// Back off from re-issuing immediately when the certificate has been
 	// in failing mode for less than 1 hour.
-	backoff, delay := shouldBackoffReissuingOnFailure(log, c.clock, input.Certificate)
+	backoff, delay := shouldBackoffReissuingOnFailure(log, c.clock, input.Certificate, input.CurrentRevisionRequest)
 	if backoff {
 		log.V(logf.InfoLevel).Info("Not re-issuing certificate as an attempt has been made in the last hour", "retry_delay", delay)
 		c.scheduleRecheckOfCertificateIfRequired(log, key, delay)
@@ -196,10 +196,29 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 	return nil
 }
 
-// shouldBackoffReissuingOnFailure tells us if we should back off from
-// reissuing the certificate and for how much time.
-func shouldBackoffReissuingOnFailure(log logr.Logger, c clock.Clock, crt *cmapi.Certificate) (backoff bool, delay time.Duration) {
+// shouldBackoffReissuingOnFailure tells us if this certificate's
+// re-issuance should be backed off and for how much time.
+//
+// The request can be left nil, in which case no back off is required. When
+// the certificate doesn't match the request, no back off is required
+// either since it means the request will have to be re-issued.
+func shouldBackoffReissuingOnFailure(log logr.Logger, c clock.Clock, crt *cmapi.Certificate, req *cmapi.CertificateRequest) (backoff bool, delay time.Duration) {
 	if crt.Status.LastFailureTime == nil {
+		return false, 0
+	}
+
+	if req == nil {
+		log.V(logf.InfoLevel).Info("CertificateRequest not available, skipping checking if Certificate matches the CertificateRequest")
+		return false, 0
+	}
+
+	mismatches, err := certificates.RequestMatchesSpec(req, crt.Spec)
+	if err != nil {
+		log.V(logf.InfoLevel).Info("CertificateRequest cannot be decoded, skipping checking if Certificate matches the CertificateRequest")
+		return false, 0
+	}
+	if len(mismatches) > 0 {
+		log.V(logf.ExtendedInfoLevel).WithValues("mismatches", mismatches).Info("Certificate is failing but the Certificate differs from CertificateRequest, backoff is not required")
 		return false, 0
 	}
 

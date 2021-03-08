@@ -492,82 +492,6 @@ func buildTestPolicyChain(t *testing.T, funcs ...policyFuncBuilder) policies.Cha
 	return c
 }
 
-func Test_shouldBackoffReissuingOnFailure(t *testing.T) {
-	clock := fakeclock.NewFakeClock(time.Date(2020, 11, 20, 16, 05, 00, 0000, time.UTC))
-	tests := []struct {
-		name        string
-		givenCert   *cmapi.Certificate
-		wantBackoff bool
-		wantDelay   time.Duration
-	}{
-		{
-			name: "no need to back off from reissuing when there is no previous failure",
-			givenCert: gen.Certificate("test",
-				gen.SetCertificateNamespace("testns"),
-				gen.SetCertificateUID("test-uid"),
-				gen.SetCertificateDNSNames("example2.com"),
-				gen.SetCertificateRevision(1),
-				// LastFailureTime is not set here.
-			),
-			wantBackoff: false,
-		},
-		{
-			name: "no need to back off from reissuing when the failure is more than an hour ago, reissuance can happen now",
-			givenCert: gen.Certificate("test",
-				gen.SetCertificateNamespace("testns"),
-				gen.SetCertificateUID("test-uid"),
-				gen.SetCertificateDNSNames("example2.com"),
-				gen.SetCertificateRevision(1),
-				gen.SetCertificateLastFailureTime(metav1.NewTime(clock.Now().Add(-61*time.Minute))),
-			),
-			wantBackoff: false,
-		},
-		{
-			name: "needs to back off from reissuing when the failure happened less than an hour ago",
-			givenCert: gen.Certificate("test",
-				gen.SetCertificateNamespace("testns"),
-				gen.SetCertificateUID("test-uid"),
-				gen.SetCertificateDNSNames("example2.com"),
-				gen.SetCertificateRevision(1),
-				gen.SetCertificateLastFailureTime(metav1.NewTime(clock.Now().Add(-59*time.Minute))),
-			),
-			wantBackoff: true,
-			wantDelay:   1 * time.Minute,
-		},
-		{
-			name: "no need to back off from reissuing when the failure happened exactly an hour ago",
-			givenCert: gen.Certificate("test",
-				gen.SetCertificateNamespace("testns"),
-				gen.SetCertificateUID("test-uid"),
-				gen.SetCertificateDNSNames("example2.com"),
-				gen.SetCertificateRevision(1),
-				gen.SetCertificateLastFailureTime(metav1.NewTime(clock.Now().Add(-60*time.Minute))),
-			),
-			wantBackoff: false,
-			wantDelay:   0,
-		},
-		{
-			name: "needs to back off from reissuing for the maximum of 1 hour when failure just happened",
-			givenCert: gen.Certificate("test",
-				gen.SetCertificateNamespace("testns"),
-				gen.SetCertificateUID("test-uid"),
-				gen.SetCertificateDNSNames("example2.com"),
-				gen.SetCertificateRevision(1),
-				gen.SetCertificateLastFailureTime(metav1.NewTime(clock.Now())),
-			),
-			wantBackoff: true,
-			wantDelay:   1 * time.Hour,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotBackoff, gotDelay := shouldBackoffReissuingOnFailure(logtest.TestLogger{T: t}, clock, tt.givenCert)
-			assert.Equal(t, tt.wantBackoff, gotBackoff)
-			assert.Equal(t, tt.wantDelay, gotDelay)
-		})
-	}
-}
-
 // We don't need to full bundle, just a simple CertificateRequest.
 func createCertificateRequestOrPanic(crt *cmapi.Certificate) *cmapi.CertificateRequest {
 	bundle, err := internaltest.CreateCryptoBundle(crt, fakeclock.NewFakeClock(time.Now()))
@@ -575,4 +499,142 @@ func createCertificateRequestOrPanic(crt *cmapi.Certificate) *cmapi.CertificateR
 		panic(err)
 	}
 	return bundle.CertificateRequest
+}
+
+func Test_shouldBackoffReissuingOnFailure(t *testing.T) {
+	clock := fakeclock.NewFakeClock(time.Date(2020, 11, 20, 16, 05, 00, 0000, time.Local))
+	tests := map[string]struct {
+		givenCert    *cmapi.Certificate
+		givenRequest *cmapi.CertificateRequest
+		wantBackoff  bool
+		wantDelay    time.Duration
+	}{
+		"no need to backoff from reissuing when the input request is nil": {
+			givenCert:   gen.Certificate("test", gen.SetCertificateNamespace("testns")),
+			wantBackoff: false,
+		},
+		"no need to back off from reissuing when there is no previous failure": {
+			givenCert: gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+				// LastFailureTime is not set here.
+			),
+			givenRequest: createCertificateRequestOrPanic(gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+			)),
+			wantBackoff: false,
+		},
+		"no need to back off from reissuing when the certificate is failed but was updated and is now different from the certificate request ": {
+			givenCert: gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example42.com"), // This field was does not match the CR.
+				gen.SetCertificateRevision(1),
+				gen.SetCertificateLastFailureTime(metav1.NewTime(clock.Now().Add(-1*time.Minute))),
+			),
+			givenRequest: createCertificateRequestOrPanic(gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+			)),
+			wantBackoff: false,
+		},
+		"no need to back off from reissuing when the failure happened less than an hour ago": {
+			givenCert: gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+				gen.SetCertificateLastFailureTime(metav1.NewTime(clock.Now().Add(-61*time.Minute))),
+			),
+			givenRequest: createCertificateRequestOrPanic(gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+			)),
+			wantBackoff: false,
+			wantDelay:   1 * time.Minute,
+		},
+		"no need to back off from reissuing when the failure is more than an hour ago, reissuance can happen now": {
+			givenCert: gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+				gen.SetCertificateLastFailureTime(metav1.NewTime(clock.Now().Add(-59*time.Minute))),
+			),
+			givenRequest: createCertificateRequestOrPanic(gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+			)),
+			wantBackoff: false,
+		},
+		"no need to back off from reissuing when the failure happened exactly an hour ago": {
+			givenCert: gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID("test-uid"),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+				gen.SetCertificateLastFailureTime(metav1.NewTime(clock.Now().Add(-60*time.Minute))),
+			),
+			givenRequest: createCertificateRequestOrPanic(gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+			)),
+			wantBackoff: false,
+			wantDelay:   0,
+		},
+		"needs to back off from reissuing for the maximum of 1 hour when failure just happened": {
+			givenCert: gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID("test-uid"),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+				gen.SetCertificateLastFailureTime(metav1.NewTime(clock.Now())),
+			),
+			givenRequest: createCertificateRequestOrPanic(gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+			)),
+			wantBackoff: true,
+			wantDelay:   1 * time.Hour,
+		},
+		"no back off from reissuing for the maximum of 1 hour when failure just happened": {
+			givenCert: gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID("test-uid"),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+				gen.SetCertificateLastFailureTime(metav1.NewTime(clock.Now())),
+			),
+			givenRequest: createCertificateRequestOrPanic(gen.Certificate("test",
+				gen.SetCertificateNamespace("testns"),
+				gen.SetCertificateUID(types.UID("test-uid")),
+				gen.SetCertificateDNSNames("example2.com"),
+				gen.SetCertificateRevision(1),
+			)),
+			wantBackoff: true,
+			wantDelay:   1 * time.Hour,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			gotBackoff, gotDelay := shouldBackoffReissuingOnFailure(logtest.TestLogger{T: t}, clock, test.givenCert, test.givenRequest)
+			assert.Equal(t, test.wantBackoff, gotBackoff)
+			assert.Equal(t, test.wantDelay, gotDelay)
+		})
+	}
 }
