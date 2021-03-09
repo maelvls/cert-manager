@@ -83,7 +83,7 @@ func (g *Gatherer) DataForCertificate(ctx context.Context, crt *cmapi.Certificat
 
 	// Attempt to fetch the CertificateRequest resource for the current
 	// 'status.revision'.
-	var req *cmapi.CertificateRequest
+	var curCR *cmapi.CertificateRequest
 	reqs, err := certificates.ListCertificateRequestsMatchingPredicates(g.CertificateRequestLister.CertificateRequests(crt.Namespace),
 		labels.Everything(),
 		predicate.ResourceOwnedBy(crt),
@@ -96,14 +96,38 @@ func (g *Gatherer) DataForCertificate(ctx context.Context, crt *cmapi.Certificat
 	case len(reqs) > 1:
 		return Input{}, fmt.Errorf("multiple CertificateRequest resources exist for the current revision, not triggering new issuance until requests have been cleaned up")
 	case len(reqs) == 1:
-		req = reqs[0]
+		curCR = reqs[0]
 	case len(reqs) == 0:
 		log.V(logf.DebugLevel).Info("Found no CertificateRequest resources owned by this Certificate for the current revision", "revision", *crt.Status.Revision)
+	}
+
+	var nextCR *cmapi.CertificateRequest
+	nextCRRevision := 1
+	if crt.Status.Revision != nil {
+		nextCRRevision = *crt.Status.Revision
+	}
+
+	reqs, err = certificates.ListCertificateRequestsMatchingPredicates(g.CertificateRequestLister.CertificateRequests(crt.Namespace),
+		labels.Everything(),
+		predicate.ResourceOwnedBy(crt),
+		predicate.CertificateRequestRevision(nextCRRevision),
+	)
+	if err != nil {
+		return Input{}, err
+	}
+	switch {
+	case len(reqs) > 1:
+		return Input{}, fmt.Errorf("multiple CertificateRequest resources exist for the next revision %d, not triggering new issuance until requests have been cleaned up", nextCRRevision)
+	case len(reqs) == 1:
+		nextCR = reqs[0]
+	case len(reqs) == 0:
+		log.V(logf.DebugLevel).Info("Found no CertificateRequest resources owned by this Certificate for the next revision", "revision", nextCRRevision)
 	}
 
 	return Input{
 		Certificate:            crt,
 		Secret:                 secret,
-		CurrentRevisionRequest: req,
+		CurrentRevisionRequest: curCR,
+		NextRevisionRequest:    nextCR,
 	}, nil
 }

@@ -160,7 +160,7 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 
 	// Back off from re-issuing immediately when the certificate has been
 	// in failing mode for less than 1 hour.
-	backoff, delay := shouldBackoffReissuingOnFailure(log, c.clock, input.Certificate, input.CurrentRevisionRequest)
+	backoff, delay := shouldBackoffReissuingOnFailure(log, c.clock, input.Certificate, input.NextRevisionRequest)
 	if backoff {
 		log.V(logf.InfoLevel).Info("Not re-issuing certificate as an attempt has been made in the last hour", "retry_delay", delay)
 		c.scheduleRecheckOfCertificateIfRequired(log, key, delay)
@@ -202,19 +202,18 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 // The request can be left nil, in which case no back off is required. When
 // the certificate doesn't match the request, no back off is required
 // either since it means the request will have to be re-issued.
-func shouldBackoffReissuingOnFailure(log logr.Logger, c clock.Clock, crt *cmapi.Certificate, req *cmapi.CertificateRequest) (backoff bool, delay time.Duration) {
+func shouldBackoffReissuingOnFailure(log logr.Logger, c clock.Clock, crt *cmapi.Certificate, nextCR *cmapi.CertificateRequest) (backoff bool, delay time.Duration) {
 	if crt.Status.LastFailureTime == nil {
 		return false, 0
 	}
 
-	if req == nil {
-		log.V(logf.InfoLevel).Info("CertificateRequest not available, skipping checking if Certificate matches the CertificateRequest")
+	if nextCR == nil {
+		log.V(logf.InfoLevel).Info("next CertificateRequest not available, skipping checking if Certificate matches the CertificateRequest")
 		return false, 0
 	}
-
-	mismatches, err := certificates.RequestMatchesSpec(req, crt.Spec)
+	mismatches, err := certificates.RequestMatchesSpec(nextCR, crt.Spec)
 	if err != nil {
-		log.V(logf.InfoLevel).Info("CertificateRequest cannot be decoded, skipping checking if Certificate matches the CertificateRequest")
+		log.V(logf.InfoLevel).Info("next CertificateRequest cannot be decoded, skipping checking if Certificate matches the CertificateRequest")
 		return false, 0
 	}
 	if len(mismatches) > 0 {
