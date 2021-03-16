@@ -70,44 +70,13 @@ func (g *Gatherer) DataForCertificate(ctx context.Context, crt *cmapi.Certificat
 		return Input{}, err
 	}
 
-	// There can't be any available "current" certificate request if the
-	// certificate's revision has not been set yet. That is due to the fact
-	// that the certificate's revision field stays nil until the first
-	// certificate request (revision "1") has become ready.
-	if crt.Status.Revision == nil {
-		return Input{
-			Certificate: crt,
-			Secret:      secret,
-		}, nil
-	}
-
-	// Attempt to fetch the CertificateRequest resource for the current
-	// 'status.revision'.
-	var curCR *cmapi.CertificateRequest
-	reqs, err := certificates.ListCertificateRequestsMatchingPredicates(g.CertificateRequestLister.CertificateRequests(crt.Namespace),
-		labels.Everything(),
-		predicate.ResourceOwnedBy(crt),
-		predicate.CertificateRequestRevision(*crt.Status.Revision),
-	)
-	if err != nil {
-		return Input{}, err
-	}
-	switch {
-	case len(reqs) > 1:
-		return Input{}, fmt.Errorf("multiple CertificateRequest resources exist for the current revision, not triggering new issuance until requests have been cleaned up")
-	case len(reqs) == 1:
-		curCR = reqs[0]
-	case len(reqs) == 0:
-		log.V(logf.DebugLevel).Info("Found no CertificateRequest resources owned by this Certificate for the current revision", "revision", *crt.Status.Revision)
-	}
-
+	// Attempt fetching the CertificateRequest for the next status.revision.
 	var nextCR *cmapi.CertificateRequest
 	nextCRRevision := 1
 	if crt.Status.Revision != nil {
 		nextCRRevision = *crt.Status.Revision
 	}
-
-	reqs, err = certificates.ListCertificateRequestsMatchingPredicates(g.CertificateRequestLister.CertificateRequests(crt.Namespace),
+	reqs, err := certificates.ListCertificateRequestsMatchingPredicates(g.CertificateRequestLister.CertificateRequests(crt.Namespace),
 		labels.Everything(),
 		predicate.ResourceOwnedBy(crt),
 		predicate.CertificateRequestRevision(nextCRRevision),
@@ -122,6 +91,33 @@ func (g *Gatherer) DataForCertificate(ctx context.Context, crt *cmapi.Certificat
 		nextCR = reqs[0]
 	case len(reqs) == 0:
 		log.V(logf.DebugLevel).Info("Found no CertificateRequest resources owned by this Certificate for the next revision", "revision", nextCRRevision)
+	}
+
+	// Attempt to fetch the CertificateRequest for the current status.revision.
+	//
+	// We can skip looking for the current CR when the status.revision is nil
+	// since there cannot be any available "current" certificate request if the
+	// certificate's revision is empty. That is due to the fact that the
+	// certificate's revision field stays nil until the first certificate
+	// request (revision "1") has become ready.
+	var curCR *cmapi.CertificateRequest
+	if crt.Status.Revision != nil {
+		reqs, err = certificates.ListCertificateRequestsMatchingPredicates(g.CertificateRequestLister.CertificateRequests(crt.Namespace),
+			labels.Everything(),
+			predicate.ResourceOwnedBy(crt),
+			predicate.CertificateRequestRevision(*crt.Status.Revision),
+		)
+		if err != nil {
+			return Input{}, err
+		}
+		switch {
+		case len(reqs) > 1:
+			return Input{}, fmt.Errorf("multiple CertificateRequest resources exist for the current revision, not triggering new issuance until requests have been cleaned up")
+		case len(reqs) == 1:
+			curCR = reqs[0]
+		case len(reqs) == 0:
+			log.V(logf.DebugLevel).Info("Found no CertificateRequest resources owned by this Certificate for the current revision", "revision", *crt.Status.Revision)
+		}
 	}
 
 	return Input{
