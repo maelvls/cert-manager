@@ -207,18 +207,18 @@ func shouldBackoffReissuingOnFailure(log logr.Logger, c clock.Clock, crt *cmapi.
 		return false, 0
 	}
 
-	if nextCR == nil {
+	if nextCR != nil {
+		mismatches, err := certificates.RequestMatchesSpec(nextCR, crt.Spec)
+		if err != nil {
+			log.V(logf.InfoLevel).Info("next CertificateRequest cannot be decoded, skipping checking if Certificate matches the CertificateRequest")
+			return false, 0
+		}
+		if len(mismatches) > 0 {
+			log.V(logf.ExtendedInfoLevel).WithValues("mismatches", mismatches).Info("Certificate is failing but the Certificate differs from CertificateRequest, backoff is not required")
+			return false, 0
+		}
+	} else {
 		log.V(logf.InfoLevel).Info("next CertificateRequest not available, skipping checking if Certificate matches the CertificateRequest")
-		return false, 0
-	}
-	mismatches, err := certificates.RequestMatchesSpec(nextCR, crt.Spec)
-	if err != nil {
-		log.V(logf.InfoLevel).Info("next CertificateRequest cannot be decoded, skipping checking if Certificate matches the CertificateRequest")
-		return false, 0
-	}
-	if len(mismatches) > 0 {
-		log.V(logf.ExtendedInfoLevel).WithValues("mismatches", mismatches).Info("Certificate is failing but the Certificate differs from CertificateRequest, backoff is not required")
-		return false, 0
 	}
 
 	now := c.Now()
@@ -227,7 +227,6 @@ func shouldBackoffReissuingOnFailure(log logr.Logger, c clock.Clock, crt *cmapi.
 		log.V(logf.ExtendedInfoLevel).WithValues("since_failure", durationSinceFailure).Info("Certificate has been in failure mode long enough, no need to back off")
 		return false, 0
 	}
-
 	return true, retryAfterLastFailure - durationSinceFailure
 }
 

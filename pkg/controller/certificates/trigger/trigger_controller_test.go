@@ -254,7 +254,7 @@ func Test_controller_ProcessItem(t *testing.T) {
 				},
 			},
 			chainShouldEvaluate: false,
-			err:                 "multiple CertificateRequest resources exist for the current revision, not triggering new issuance until requests have been cleaned up",
+			err:                 "multiple CertificateRequest resources exist for the next revision 3, not triggering new issuance until requests have been cleaned up",
 		},
 		"should evaluate policy if no certificaterequest resource exists for the current revision": {
 			certificate: &cmapi.Certificate{
@@ -323,7 +323,7 @@ func Test_controller_ProcessItem(t *testing.T) {
 				},
 			},
 		},
-		"should not set the 'Issuing' status condition when the certificate has been failing for less than 60 minutes and that the cert spec was not changed": {
+		"should not set the 'Issuing' status condition when the certificate has been failing for less than 60 minutes and the cert spec was not changed": {
 			certificate: &cmapi.Certificate{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "testns", Name: "test", Generation: 3},
 				Status: cmapi.CertificateStatus{
@@ -384,7 +384,7 @@ func Test_controller_ProcessItem(t *testing.T) {
 				},
 			},
 		},
-		"should set the Issuing condition if the last failure is set and that the revision has not be set yet": {
+		"should set the Issuing condition when the certificate is failing and that the status.revision not set yet": {
 			certificate: gen.Certificate("test",
 				gen.SetCertificateNamespace("testns"),
 				gen.SetCertificateUID(types.UID("test-uid")),

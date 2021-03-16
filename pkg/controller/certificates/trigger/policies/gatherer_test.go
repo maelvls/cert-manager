@@ -182,7 +182,7 @@ func TestDataForCertificate(t *testing.T) {
 					),
 				},
 			},
-			wantErr: "multiple CertificateRequest resources exist for the current revision, not triggering new issuance until requests have been cleaned up",
+			wantErr: "multiple CertificateRequest resources exist for the next revision 1, not triggering new issuance until requests have been cleaned up",
 		},
 	}
 	for name, test := range tests {
