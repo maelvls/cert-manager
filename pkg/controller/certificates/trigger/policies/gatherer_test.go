@@ -114,27 +114,27 @@ func TestDataForCertificate(t *testing.T) {
 			wantCurCR:  cr("cr-1-rev1", "ns-1", "cert-1-uid", map[string]string{"cert-manager.io/certificate-revision": "1"}),
 			wantNextCR: cr("cr-1-rev2", "ns-1", "cert-1-uid", map[string]string{"cert-manager.io/certificate-revision": "2"}),
 		},
+		"should error when duplicate current CRs are found": {
+			givenCert: gen.Certificate("cert-1", gen.SetCertificateNamespace("ns-1"),
+				gen.SetCertificateUID("cert-1-uid"),
+				gen.SetCertificateRevision(1),
+			),
+			builder: &testpkg.Builder{CertManagerObjects: []runtime.Object{
+				cr("cr-1-rev1a", "ns-1", "cert-1-uid", map[string]string{"cert-manager.io/certificate-revision": "1"}),
+				cr("cr-1-rev1b", "ns-1", "cert-1-uid", map[string]string{"cert-manager.io/certificate-revision": "1"}),
+			}},
+			wantErr: `multiple CertificateRequests found for the 'current' revision 1, skipping issuance until no more duplicate`,
+		},
 		"should error when duplicate next CRs are found": {
 			givenCert: gen.Certificate("cert-1", gen.SetCertificateNamespace("ns-1"),
 				gen.SetCertificateUID("cert-1-uid"),
 				gen.SetCertificateRevision(1),
 			),
 			builder: &testpkg.Builder{CertManagerObjects: []runtime.Object{
-				cr("cr-1-rev1", "ns-1", "cert-1-uid", map[string]string{"cert-manager.io/certificate-revision": "1"}),
-				cr("cr-1-rev1bis", "ns-1", "cert-1-uid", map[string]string{"cert-manager.io/certificate-revision": "1"}),
+				cr("cr-1-rev2a", "ns-1", "cert-1-uid", map[string]string{"cert-manager.io/certificate-revision": "2"}),
+				cr("cr-1-rev2b", "ns-1", "cert-1-uid", map[string]string{"cert-manager.io/certificate-revision": "2"}),
 			}},
-			wantErr: `found duplicates when listing the 'current' CertificateRequests that have revision=1, skipping issuance`,
-		},
-		"should error when duplicate cur CRs are found": {
-			givenCert: gen.Certificate("cert-1", gen.SetCertificateNamespace("ns-1"),
-				gen.SetCertificateUID("cert-1-uid"),
-				gen.SetCertificateRevision(1),
-			),
-			builder: &testpkg.Builder{CertManagerObjects: []runtime.Object{
-				cr("cr-1-rev2", "ns-1", "cert-1-uid", map[string]string{"cert-manager.io/certificate-revision": "2"}),
-				cr("cr-1-rev2bis", "ns-1", "cert-1-uid", map[string]string{"cert-manager.io/certificate-revision": "2"}),
-			}},
-			wantErr: `found duplicates when listing the 'next' CertificateRequests that have revision=2, skipping issuance`,
+			wantErr: `multiple CertificateRequests found for the 'next' revision 2, skipping issuance until no more duplicate`,
 		},
 	}
 	for name, test := range tests {

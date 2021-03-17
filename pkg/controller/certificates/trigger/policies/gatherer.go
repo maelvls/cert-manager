@@ -89,7 +89,7 @@ func (g *Gatherer) DataForCertificate(ctx context.Context, crt *cmapi.Certificat
 		}
 		switch {
 		case len(reqs) > 1:
-			return Input{}, fmt.Errorf("found duplicates when listing the 'current' CertificateRequests that have revision=%v, skipping issuance", *crt.Status.Revision)
+			return Input{}, fmt.Errorf("multiple CertificateRequests found for the 'current' revision %v, skipping issuance until no more duplicate", *crt.Status.Revision)
 		case len(reqs) == 1:
 			curCR = reqs[0]
 		case len(reqs) == 0:
@@ -113,7 +113,7 @@ func (g *Gatherer) DataForCertificate(ctx context.Context, crt *cmapi.Certificat
 	}
 	switch {
 	case len(reqs) > 1:
-		return Input{}, fmt.Errorf("found duplicates when listing the 'next' CertificateRequests that have revision=%v, skipping issuance", nextCRRevision)
+		return Input{}, fmt.Errorf("multiple CertificateRequests found for the 'next' revision %v, skipping issuance until no more duplicate", nextCRRevision)
 	case len(reqs) == 1:
 		nextCR = reqs[0]
 	case len(reqs) == 0:
