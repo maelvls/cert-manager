@@ -55,29 +55,16 @@ type Input struct {
 	NextRevisionRequest *cmapi.CertificateRequest
 }
 
-// A Func evaluates the given input data and decides whether a
+// A ShouldReissue evaluates the given input data and decides whether a
 // re-issuance is required, returning additional human readable information
 // in the 'reason' and 'message' return parameters if so.
-type Func func(Input) (reason, message string, reissue bool)
+type ShouldReissue func(Input) (reason, message string, reissue bool)
 
-// A chain of PolicyFuncs to be evaluated in order.
-type Chain []Func
-
-// Evaluate will evaluate the entire policy chain using the provided input.
-// As soon as it is discovered that the input violates one policy,
-// Evaluate will return and not evaluate the rest of the chain.
-func (c Chain) Evaluate(input Input) (string, string, bool) {
-	for _, policyFunc := range c {
-		reason, message, violationFound := policyFunc(input)
-		if violationFound {
-			return reason, message, violationFound
-		}
-	}
-	return "", "", false
-}
-
-func NewTriggerPolicyChain(c clock.Clock, defaultRenewBeforeExpiryDuration time.Duration) Chain {
-	return Chain{
+// The returned ShouldReissueFn function evaluates the entire policy chain using
+// the provided input. As soon as it is discovered that the input violates one
+// policy, Evaluate will return and not evaluate the rest of the chain.
+func NewShouldReissueFn(c clock.Clock, defaultRenewBeforeExpiryDuration time.Duration) ShouldReissue {
+	chain := []ShouldReissue{
 		SecretDoesNotExist,
 		SecretIsMissingData,
 		SecretPublicKeysDiffer,
@@ -85,6 +72,16 @@ func NewTriggerPolicyChain(c clock.Clock, defaultRenewBeforeExpiryDuration time.
 		SecretIssuerAnnotationsNotUpToDate,
 		CurrentCertificateRequestNotValidForSpec,
 		CurrentCertificateNearingExpiry(c, defaultRenewBeforeExpiryDuration),
+	}
+
+	return func(input Input) (reason, message string, reissue bool) {
+		for _, policyFunc := range chain {
+			reason, message, violationFound := policyFunc(input)
+			if violationFound {
+				return reason, message, violationFound
+			}
+		}
+		return "", "", false
 	}
 }
 
@@ -201,7 +198,7 @@ func currentSecretValidForSpec(input Input) (string, string, bool) {
 // CurrentCertificateNearingExpiry returns a policy function that can be used to
 // check whether an X.509 cert currently issued for a Certificate should be
 // renewed.
-func CurrentCertificateNearingExpiry(c clock.Clock, defaultRenewBeforeExpiryDuration time.Duration) Func {
+func CurrentCertificateNearingExpiry(c clock.Clock, defaultRenewBeforeExpiryDuration time.Duration) ShouldReissue {
 
 	return func(input Input) (string, string, bool) {
 
@@ -234,7 +231,7 @@ func CurrentCertificateNearingExpiry(c clock.Clock, defaultRenewBeforeExpiryDura
 
 // CurrentCertificateHasExpired is used exclusively to check if the current
 // issued certificate has actually expired rather than just nearing expiry.
-func CurrentCertificateHasExpired(c clock.Clock) Func {
+func CurrentCertificateHasExpired(c clock.Clock) ShouldReissue {
 	return func(input Input) (string, string, bool) {
 		certData, ok := input.Secret.Data[corev1.TLSCertKey]
 		if !ok {

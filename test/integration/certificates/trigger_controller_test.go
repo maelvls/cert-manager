@@ -67,7 +67,7 @@ func TestTriggerController(t *testing.T) {
 	}
 	// default certificate renewBefore period
 	defaultRenewBefore := time.Hour * 24
-	ctrl, queue, mustSync := trigger.NewController(logf.Log, cmCl, factory, cmFactory, framework.NewEventRecorder(t), fakeClock, policies.NewTriggerPolicyChain(fakeClock, defaultRenewBefore))
+	ctrl, queue, mustSync := trigger.NewController(logf.Log, cmCl, factory, cmFactory, framework.NewEventRecorder(t), fakeClock, policies.NewShouldReissueFn(fakeClock, defaultRenewBefore))
 	c := controllerpkg.NewController(
 		context.Background(),
 		"trigger_test",
