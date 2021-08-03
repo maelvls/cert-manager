@@ -425,6 +425,9 @@ func isUnrequiredCertificate(crt *cmapi.Certificate, ingLike metav1.Object) bool
 		}
 	case *gwapi.Gateway:
 		for _, l := range o.Spec.Listeners {
+			if l.TLS == nil || l.TLS.CertificateRef == nil {
+				continue
+			}
 			if crt.Spec.SecretName == l.TLS.CertificateRef.Name {
 				return false
 			}

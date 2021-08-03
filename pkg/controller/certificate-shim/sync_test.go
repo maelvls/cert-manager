@@ -2610,6 +2610,7 @@ func buildIngressOwnerReferences(name, namespace string) []metav1.OwnerReference
 	}
 }
 
+// The Gateway name and UID are set to the same.
 func buildGatewayOwnerReferences(name, namespace string) []metav1.OwnerReference {
 	return []metav1.OwnerReference{
 		*metav1.NewControllerRef(buildIngress(name, namespace, nil), gatewayGVK),
@@ -2719,4 +2720,25 @@ func Test_validateGatewayListenerBlock(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_secretNameUsedIn_nilPointerGateway(t *testing.T) {
+	got := secretNameUsedIn("secret-name", &gwapi.Gateway{
+		ObjectMeta: metav1.ObjectMeta{Name: "gw-1", Namespace: "default", UID: "gw-1"},
+		Spec: gwapi.GatewaySpec{Listeners: []gwapi.Listener{
+			{TLS: nil},
+			{TLS: &gwapi.GatewayTLSConfig{CertificateRef: nil}},
+			{TLS: &gwapi.GatewayTLSConfig{CertificateRef: &gwapi.LocalObjectReference{Name: "secret-name"}}},
+		}},
+	})
+	assert.Equal(t, true, got)
+
+	got = secretNameUsedIn("secret-name", &gwapi.Gateway{
+		ObjectMeta: metav1.ObjectMeta{Name: "gw-1", Namespace: "default", UID: "gw-1"},
+		Spec: gwapi.GatewaySpec{Listeners: []gwapi.Listener{
+			{TLS: nil},
+			{TLS: &gwapi.GatewayTLSConfig{CertificateRef: nil}},
+		}},
+	})
+	assert.Equal(t, false, got)
 }
