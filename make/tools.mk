@@ -223,7 +223,7 @@ bin/tools/ginkgo: bin/downloaded/tools/ginkgo@$(GINKGO_VERSION) bin/scratch/GINK
 	@cd $(dir $@) && $(LN) $(patsubst bin/%,../%,$<) $(notdir $@)
 
 bin/downloaded/tools/ginkgo@$(GINKGO_VERSION): $(DEPENDS_ON_GO) | bin/downloaded/tools
-	GOBIN=$(PWD)/$(dir $@) $(GO) install github.com/onsi/ginkgo/ginkgo@$(GINKGO_VERSION)
+	GOBIN=$(PWD)/$(dir $@) $(GO) install github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION)
 	@mv $(subst @$(GINKGO_VERSION),,$@) $@
 
 #########

@@ -20,14 +20,10 @@ package e2e
 
 import (
 	"flag"
-	"fmt"
-	"path"
 	"testing"
 	"time"
 
-	"github.com/onsi/ginkgo"
-	ginkgoconfig "github.com/onsi/ginkgo/config"
-	"github.com/onsi/ginkgo/reporters"
+	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -38,29 +34,25 @@ import (
 
 var featureGates string
 
-func init() {
+func TestE2E(t *testing.T) {
 	logs.InitLogs(flag.CommandLine)
+	defer logs.FlushLogs()
 	framework.DefaultConfig.AddFlags(flag.CommandLine)
 
-	// Turn on verbose by default to get spec names
-	ginkgoconfig.DefaultReporterConfig.Verbose = true
-	// Turn on EmitSpecProgress to get spec progress (especially on interrupt)
-	ginkgoconfig.GinkgoConfig.EmitSpecProgress = true
-	// Randomize specs as well as suites
-	ginkgoconfig.GinkgoConfig.RandomizeAllSpecs = true
-
-	wait.ForeverTestTimeout = time.Second * 60
-}
-
-func TestE2E(t *testing.T) {
-	defer logs.FlushLogs()
 	flag.Parse()
+
+	suiteConfig, reporterConfig := ginkgo.GinkgoConfiguration()
+
+	reporterConfig.Verbose = true
+	suiteConfig.EmitSpecProgress = true
+	suiteConfig.RandomizeAllSpecs = true
+	wait.ForeverTestTimeout = time.Second * 60
 
 	// Disable skipped tests unless they are explicitly requested.
 	// Copied from https://github.com/kubernetes/kubernetes/blob/960e5e78255dd148d4dae49f62e729ea940f4f07/test/e2e/e2e.go#L103-L106
 	// See https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/flaky-tests.md#quarantining-flakes
-	if len(ginkgoconfig.GinkgoConfig.FocusStrings) == 0 && len(ginkgoconfig.GinkgoConfig.SkipStrings) == 0 {
-		ginkgoconfig.GinkgoConfig.SkipStrings = []string{`\[Flaky\]`}
+	if len(suiteConfig.FocusStrings) == 0 && len(suiteConfig.SkipStrings) == 0 {
+		suiteConfig.SkipStrings = []string{`\[Flaky\]`}
 	}
 
 	if err := framework.DefaultConfig.Validate(); err != nil {
@@ -72,17 +64,9 @@ func TestE2E(t *testing.T) {
 
 	// TODO: properly make use of default SkipString
 	// Disable skipped tests unless they are explicitly requested.
-	// if ginkgoconfig.GinkgoConfig.FocusString == "" && ginkgoconfig.GinkgoConfig.SkipString == "" {
-	// 	ginkgoconfig.GinkgoConfig.SkipString = `\[Flaky\]|\[Feature:.+\]`
+	// if suiteConfig.FocusString == "" && suiteConfig.SkipString == "" {
+	// 	suiteConfig.SkipString = `\[Flaky\]|\[Feature:.+\]`
 	// }
 
-	var r []ginkgo.Reporter
-	if framework.DefaultConfig.Ginkgo.ReportDirectory != "" {
-		r = append(r, reporters.NewJUnitReporter(path.Join(framework.DefaultConfig.Ginkgo.ReportDirectory,
-			fmt.Sprintf("junit_%s_%02d.xml",
-				framework.DefaultConfig.Ginkgo.ReportPrefix,
-				ginkgoconfig.GinkgoConfig.ParallelNode))))
-	}
-
-	ginkgo.RunSpecsWithDefaultAndCustomReporters(t, "cert-manager e2e suite", r)
+	ginkgo.RunSpecs(t, "cert-manager e2e suite")
 }

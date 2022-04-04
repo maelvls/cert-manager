@@ -192,9 +192,9 @@ service_ip_prefix=$(set +o pipefail && kubectl cluster-info dump | grep -m1 ip-r
 
 export CGO_ENABLED=0
 trace ginkgo \
-  -nodes "$nodes" \
-  -flakeAttempts "$flake_attempts" \
-  -tags e2e_test \
+  --nodes "$nodes" \
+  --flake-attempts "$flake_attempts" \
+  --tags e2e_test \
   ./test/e2e/ \
   -- \
   --repo-root="$PWD" \
