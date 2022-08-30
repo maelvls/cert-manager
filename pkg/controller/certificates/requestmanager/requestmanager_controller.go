@@ -205,7 +205,7 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 		return err
 	}
 
-	requests, err = c.deleteCurrentFailedRequests(ctx, crt, requests...)
+	requests, err = c.deleteNextFailedRequests(ctx, crt, requests...)
 	if err != nil {
 		return err
 	}
@@ -227,17 +227,17 @@ func (c *controller) ProcessItem(ctx context.Context, key string) error {
 	return c.createNewCertificateRequest(ctx, crt, pk, nextRevision, nextPrivateKeySecret.Name)
 }
 
-func (c *controller) deleteCurrentFailedRequests(ctx context.Context, crt *cmapi.Certificate, reqs ...*cmapi.CertificateRequest) ([]*cmapi.CertificateRequest, error) {
+func (c *controller) deleteNextFailedRequests(ctx context.Context, crt *cmapi.Certificate, reqs ...*cmapi.CertificateRequest) ([]*cmapi.CertificateRequest, error) {
 	log := logf.FromContext(ctx).WithValues("Certificate", crt.Name)
 	var remaining []*cmapi.CertificateRequest
 	for _, req := range reqs {
 		log = logf.WithRelatedResource(log, req)
 
-		// Check if there are any 'current' CertificateRequests that
-		// failed during the previous issuance cycle. Those should be
-		// deleted so that a new one gets created and the issuance is
-		// re-tried. In practice no more than one CertificateRequest is
-		// expected at this point.
+		// Check if there are any 'next' CertificateRequests that failed during
+		// the previous issuance cycle (the term 'next' is defined in
+		// gatherer.go). Those should be deleted so that a new one gets created
+		// and the issuance is re-tried. In practice no more than one
+		// CertificateRequest is expected at this point.
 		crReadyCond := apiutil.GetCertificateRequestCondition(req, cmapi.CertificateRequestConditionReady)
 		if crReadyCond == nil || crReadyCond.Status != cmmeta.ConditionFalse || crReadyCond.Reason != cmapi.CertificateRequestReasonFailed {
 			remaining = append(remaining, req)
