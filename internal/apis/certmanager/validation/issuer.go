@@ -267,6 +267,89 @@ func ValidateVaultIssuerConfig(iss *certmanager.VaultIssuer, fldPath *field.Path
 	return el
 }
 
+func ValidateVaultIssuer(vault *certmanager.VaultIssuer, path *field.Path) field.ErrorList {
+	var errs field.ErrorList
+
+	// The server and path must be provided.
+	if vault.Server == "" {
+		errs = append(errs, field.Required(path.Child("server"), "the server URL is required"))
+	}
+	if vault.Path == "" {
+		errs = append(errs, field.Required(path.Child("path"), "a Vault path is required. Example: pki/sign/example-dot-com"))
+	}
+
+	// At least one auth method is specified.
+	if vault.Auth.TokenSecretRef == nil && vault.Auth.AppRole == nil && vault.Auth.Kubernetes == nil {
+		errs = append(errs, field.Required(path.Child("auth"), "at least one auth method must be specified"))
+
+		return errs
+	}
+
+	// At most one auth method is specified.
+	if (vault.Auth.TokenSecretRef != nil && vault.Auth.AppRole != nil) ||
+		(vault.Auth.TokenSecretRef != nil && vault.Auth.Kubernetes != nil) ||
+		(vault.Auth.AppRole != nil && vault.Auth.Kubernetes != nil) {
+		errs = append(errs, field.Forbidden(path.Child("auth"), "at most one of [secretRef, appRole, and kubernetes] can be specified"))
+
+		return errs
+	}
+
+	if vault.Auth.TokenSecretRef != nil {
+		path = path.Child("auth", "secretRef")
+		if vault.Auth.TokenSecretRef.Name == "" {
+			errs = append(errs, field.Required(path.Child("name"), "the name of the secret containing the Vault token is required"))
+		}
+	}
+
+	if vault.Auth.AppRole != nil {
+		path = path.Child("auth", "appRole")
+
+		// Both secretRef.name and roleId must be specified.
+		if len(vault.Auth.AppRole.RoleId) == 0 {
+			errs = append(errs, field.Required(path.Child("roleId"), ""))
+		}
+		if len(vault.Auth.AppRole.SecretRef.Name) == 0 {
+			errs = append(errs, field.Required(path.Child("secretRef", "name"), ""))
+		}
+	}
+
+	if vault.Auth.Kubernetes != nil {
+		path = path.Child("auth", "kubernetes")
+
+		// When using the Kubernetes auth, giving a role is mandatory.
+		if vault.Auth.Kubernetes.Role == "" {
+			errs = append(errs, field.Required(path.Child("role"), "a Vault role needs to be set"))
+		}
+
+		emptySecretRef := vault.Auth.Kubernetes.SecretRef.Name == "" && vault.Auth.Kubernetes.SecretRef.Key == ""
+
+		// At least one of [kubernetes.secretRef, kubernetes.serviceAccountRef]
+		// must be specified.
+		if emptySecretRef && vault.Auth.Kubernetes.ServiceAccountRef == nil {
+			errs = append(errs, field.Forbidden(path.Child("auth"), "secretRef and serviceAccountRef are mutually exclusive"))
+
+			return errs
+		}
+
+		// At most one of [kubernetes.secretRef, kubernetes.serviceAccountRef]
+		// must be specified.
+		if !emptySecretRef && vault.Auth.Kubernetes.ServiceAccountRef != nil {
+			errs = append(errs, field.Forbidden(path.Child("auth"), "secretRef and serviceAccountRef are mutually exclusive"))
+
+			return errs
+		}
+
+		if vault.Auth.Kubernetes.ServiceAccountRef != nil {
+			path = path.Child("auth", "kubernetes", "serviceAccountRef")
+			if len(vault.Auth.Kubernetes.ServiceAccountRef.Name) == 0 {
+				errs = append(errs, field.Required(path.Child("name"), ""))
+			}
+		}
+	}
+
+	return errs
+}
+
 func ValidateVaultIssuerAuth(auth *certmanager.VaultAuth, fldPath *field.Path) field.ErrorList {
 	el := field.ErrorList{}
 
