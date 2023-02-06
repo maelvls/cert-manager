@@ -120,8 +120,7 @@ func (v *Vault) Setup(ctx context.Context) error {
 		return nil
 	}
 
-	createTokenFn := func(ns string) vaultinternal.CreateToken { return v.Client.CoreV1().ServiceAccounts(ns).CreateToken }
-	client, err := vaultinternal.New(v.resourceNamespace, createTokenFn, v.secretsLister, v.issuer)
+	client, err := vaultinternal.New(v.resourceNamespace, v.createTokenFn, v.secretsLister, v.issuer)
 	if err != nil {
 		s := messageVaultClientInitFailed + err.Error()
 		logf.V(logf.WarnLevel).Infof("%s: %s", v.issuer.GetObjectMeta().Name, s)
