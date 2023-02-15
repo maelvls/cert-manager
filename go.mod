@@ -7,7 +7,7 @@ require (
 	github.com/Azure/go-autorest/autorest v0.11.28
 	github.com/Azure/go-autorest/autorest/adal v0.9.21
 	github.com/Azure/go-autorest/autorest/to v0.4.0
-	github.com/Venafi/vcert/v4 v4.22.1
+	github.com/Venafi/vcert/v4 v4.0.0-00010101000000-000000000000
 	github.com/akamai/AkamaiOPEN-edgegrid-golang v1.2.1
 	github.com/aws/aws-sdk-go v1.44.105
 	github.com/cloudflare/cloudflare-go v0.50.0
@@ -268,3 +268,6 @@ replace (
 	go.opentelemetry.io/otel/trace => go.opentelemetry.io/otel/trace v0.20.0
 	go.opentelemetry.io/proto/otlp => go.opentelemetry.io/proto/otlp v0.7.0
 )
+
+// remove this once https://github.com/jetstack/vcert/pull/3 is merged upstream
+replace github.com/Venafi/vcert/v4 => github.com/jetstack/vcert/v4 v4.9.6-0.20230127103832-3aa3dfd6613d
