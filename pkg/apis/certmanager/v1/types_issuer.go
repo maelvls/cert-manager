@@ -276,7 +276,7 @@ type VaultClientCertificateAuth struct {
 	// tls.crt and tls.key) used to authenticate to Vault using TLS client
 	// authentication.
 	// +optional
-	SecretName string `json:"secretName"`
+	SecretName string `json:"secretName,omitempty"`
 
 	// A required field containing the Vault Role to assume.
 	Role string `json:"role"`
