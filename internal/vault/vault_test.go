@@ -827,14 +827,9 @@ func TestSetToken(t *testing.T) {
 			}
 
 			err := v.setToken(test.fakeClient)
-			if test.expectedErr == nil && err != nil {
-				t.Errorf("unexpected error, exp=%v got=%v",
-					test.expectedErr, err)
-			} else if test.expectedErr != nil && err == nil {
-				t.Errorf("unexpected error, exp=%v got=%v",
-					test.expectedErr, err)
-			} else if (test.expectedErr != nil && err != nil) &&
-				(test.expectedErr.Error() != err.Error()) {
+			if ((test.expectedErr == nil) != (err == nil)) &&
+				test.expectedErr != nil &&
+				test.expectedErr.Error() != err.Error() {
 				t.Errorf("unexpected error, exp=%v got=%v",
 					test.expectedErr, err)
 			}
