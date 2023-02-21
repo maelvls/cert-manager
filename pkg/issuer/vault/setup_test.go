@@ -400,7 +400,7 @@ func TestVault_Setup(t *testing.T) {
 					},
 				},
 			},
-			expectCond: "Ready False: VaultError: Vault client certificate auth requires a role to be set",
+			expectCond:    "Ready False: VaultError: Vault client certificate auth requires a role to be set",
 			webhookReject: true,
 		},
 	}
