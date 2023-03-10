@@ -18,8 +18,15 @@ package vault
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"path"
+	"time"
 
 	vault "github.com/hashicorp/vault/api"
 	corev1 "k8s.io/api/core/v1"
@@ -43,9 +50,10 @@ type VaultInitializer struct {
 	IntermediateMount string
 	// Whether the intermediate CA should be configured with root CA
 	ConfigureWithRoot  bool
-	Role               string // AppRole auth Role
+	Role               string // Role used across all auth methods
 	AppRoleAuthPath    string // AppRole auth mount point in Vault
 	KubernetesAuthPath string // Kubernetes auth mount point in Vault
+	CertAuthPath       string // Cert auth mount point in Vault
 	APIServerURL       string // Kubernetes API Server URL
 	APIServerCA        string // Kubernetes API Server CA certificate
 }
@@ -210,6 +218,10 @@ func (v *VaultInitializer) Setup() error {
 	}
 
 	if err := v.setupKubernetesBasedAuth(); err != nil {
+		return err
+	}
+
+	if err := v.setupCertAuth(); err != nil {
 		return err
 	}
 
@@ -625,4 +637,74 @@ func CleanKubernetesRoleForServiceAccountRefAuth(client kubernetes.Interface, ro
 	}
 
 	return nil
+}
+
+func (v *VaultInitializer) setupCertAuth() error {
+	// vault auth enable cert
+	auths, err := v.client.Sys().ListAuth()
+	if err != nil {
+		return fmt.Errorf("Error fetching auth mounts: %s", err.Error())
+	}
+	if _, ok := auths[v.CertAuthPath]; !ok {
+		options := &vault.EnableAuthOptions{Type: "cert"}
+		if err := v.client.Sys().EnableAuthWithOptions(v.CertAuthPath, options); err != nil {
+			return fmt.Errorf("Error enabling cert auth: %s", err.Error())
+		}
+	}
+
+	return nil
+}
+
+func (v *VaultInitializer) CreateCertRole() (key []byte, cert []byte, _ error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	template := x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "example.com"},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().AddDate(1, 0, 0),
+		BasicConstraintsValid: true,
+	}
+
+	certificateBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	privateKeyBytes := x509.MarshalPKCS1PrivateKey(privateKey)
+	privateKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: privateKeyBytes})
+	certificatePEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificateBytes})
+
+	role_path := path.Join(v.IntermediateMount, "sign", v.Role)
+	policy := fmt.Sprintf("path \"%s\" { capabilities = [ \"create\", \"update\" ] }", role_path)
+	err = v.client.Sys().PutPolicy(v.Role, policy)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Error creating policy: %s", err.Error())
+	}
+
+	// vault write auth/cert/certs/web
+	url := fmt.Sprintf("/v1/auth/%s/certs/%s", v.CertAuthPath, v.Role)
+	_, err = v.proxy.callVault("POST", url, "", map[string]string{
+		"display_name": v.Role,
+		"policies":     v.Role,
+		"certificate":  string(certificatePEM),
+		"ttl":          "3600",
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("error configuring cert auth role: %s", err)
+	}
+
+	baseUrl := path.Join("/v1/auth", v.AppRoleAuthPath, "role", v.Role)
+	_, err = v.proxy.callVault("POST", baseUrl, "", map[string]string{
+		"period":   "24h",
+		"policies": v.Role,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("Error creating approle: %s", err.Error())
+	}
+
+	return privateKeyPEM, certificatePEM, nil
 }

@@ -385,3 +385,9 @@ func SetIssuerNamespace(namespace string) IssuerModifier {
 		iss.GetObjectMeta().Namespace = namespace
 	}
 }
+
+func SetClientCertificateAuth(c *v1.VaultClientCertificateAuth) IssuerModifier {
+	return func(iss v1.GenericIssuer) {
+		iss.GetSpec().Vault.Auth.ClientCertificate = c
+	}
+}
