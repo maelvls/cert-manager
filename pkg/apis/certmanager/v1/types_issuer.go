@@ -278,8 +278,10 @@ type VaultClientCertificateAuth struct {
 	// +optional
 	SecretName string `json:"secretName,omitempty"`
 
-	// A required field containing the Vault Role to assume.
-	Role string `json:"role"`
+	// Name of the certificate role to authenticate against.
+	// If not set, matching any certificate role, if available.
+	// +optional
+	Name string `json:"name,omitempty"`
 }
 
 // Authenticate against Vault using a Kubernetes ServiceAccount token stored in

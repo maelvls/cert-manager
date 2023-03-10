@@ -254,8 +254,10 @@ type VaultClientCertificateAuth struct {
 	// +optional
 	SecretName string
 
-	// A required field containing the Vault Role to assume.
-	Role string
+	// Name of the certificate role to authenticate against.
+	// If not set, matching any certificate role, if available.
+	// +optional
+	Name string
 }
 
 // Authenticate against Vault using a Kubernetes ServiceAccount token stored in
