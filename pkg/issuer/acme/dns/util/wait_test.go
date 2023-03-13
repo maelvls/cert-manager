@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/miekg/dns"
+	"github.com/stretchr/testify/require"
 )
 
 var lookupNameserversTestsOK = []struct {
@@ -284,6 +285,12 @@ func TestValidateCAA(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected err, got %s", err)
 	}
+}
+
+func Test_followCNAMEs_live(t *testing.T) {
+	err := ValidateCAA("*.linoa.dev", []string{"a"}, true, []string{"8.8.8.8:53", "8.8.4.4:53"})
+	require.NoError(t, err)
+	// assert.Equal(t, "_acme-challenge.linoa.dev.", s)
 }
 
 func Test_followCNAMEs(t *testing.T) {

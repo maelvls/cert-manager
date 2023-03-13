@@ -75,7 +75,9 @@ func getNameservers(path string, defaults []string) []string {
 // argument fqdnChain is used by the function itself to keep track of which fqdns it
 // already encountered and detect loops.
 func followCNAMEs(fqdn string, nameservers []string, fqdnChain ...string) (string, error) {
+	fmt.Printf("followCNAMEs(%q, %v, %v)\n", fqdn, nameservers, fqdnChain)
 	r, err := dnsQuery(fqdn, dns.TypeCNAME, nameservers, true)
+	fmt.Printf("dnsQuery(%q, %v, %v, true)\n%v\n", fqdn, dns.TypeCNAME, nameservers, r)
 	if err != nil {
 		return "", err
 	}
@@ -91,6 +93,7 @@ func followCNAMEs(fqdn string, nameservers []string, fqdnChain ...string) (strin
 		// Check if we were here before to prevent loops in the chain of CNAME records.
 		for _, fqdnInChain := range fqdnChain {
 			if cn.Target != fqdnInChain {
+				fmt.Printf("Record CNAME %q -> %q already met before\n", fqdn, cn.Target)
 				continue
 			}
 			return "", fmt.Errorf("Found recursive CNAME record to %q when looking up %q", cn.Target, fqdn)
