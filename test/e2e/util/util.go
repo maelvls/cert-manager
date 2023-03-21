@@ -72,7 +72,7 @@ func WaitForIssuerStatusFunc(client clientset.IssuerInterface, name string, fn f
 func WaitForIssuerCondition(client clientset.IssuerInterface, name string, condition v1.IssuerCondition) error {
 	logf, done := log.LogBackoff()
 	defer done()
-	pollErr := wait.PollImmediate(500*time.Millisecond, time.Minute,
+	pollErr := wait.PollImmediate(500*time.Millisecond, 100*time.Minute,
 		func() (bool, error) {
 			logf("Waiting for issuer %v condition %#v", name, condition)
 			issuer, err := client.Get(context.TODO(), name, metav1.GetOptions{})

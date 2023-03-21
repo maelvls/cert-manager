@@ -57,7 +57,7 @@ func runVaultCertAuthTest(fs featureset.FeatureSet) {
 
 	rootMount := "root-ca"
 	intermediateMount := "intermediate-ca"
-	authPath := "v1/auth/cert"
+	authPath := "cert"
 	role := "cert"
 	certificateName := "test-vault"
 	certificateSecretName := "test-vault"
@@ -85,7 +85,7 @@ func runVaultCertAuthTest(fs featureset.FeatureSet) {
 		Expect(err).NotTo(HaveOccurred())
 
 		sec, err := f.KubeClientSet.CoreV1().Secrets(vaultSecretNamespace).Create(context.TODO(), &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{GenerateName: "vault-client-cert-"},
+			ObjectMeta: metav1.ObjectMeta{Name: "vault-client-cert"},
 			StringData: map[string]string{
 				"tls.key": string(keyPEM),
 				"tls.crt": string(certPEM),
@@ -115,7 +115,7 @@ func runVaultCertAuthTest(fs featureset.FeatureSet) {
 			gen.SetIssuerVaultPath(vaultPath),
 			gen.SetIssuerVaultCABundle(vault.Details().VaultCA),
 			gen.SetClientCertificateAuth(&cmapi.VaultClientCertificateAuth{
-				Path:       authPath,
+				Path:       "/v1/auth/" + authPath,
 				Name:       role,
 				SecretName: vaultSecretName,
 			}))

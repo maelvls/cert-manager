@@ -667,6 +667,7 @@ func (v *VaultInitializer) CreateCertRole() (key []byte, cert []byte, _ error) {
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().AddDate(1, 0, 0),
 		BasicConstraintsValid: true,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
 
 	certificateBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
@@ -685,7 +686,7 @@ func (v *VaultInitializer) CreateCertRole() (key []byte, cert []byte, _ error) {
 		return nil, nil, fmt.Errorf("Error creating policy: %s", err.Error())
 	}
 
-	// vault write auth/cert/certs/web
+	// vault write auth/cert/certs/<cert-name>
 	url := fmt.Sprintf("/v1/auth/%s/certs/%s", v.CertAuthPath, v.Role)
 	_, err = v.proxy.callVault("POST", url, "", map[string]string{
 		"display_name": v.Role,
@@ -695,15 +696,6 @@ func (v *VaultInitializer) CreateCertRole() (key []byte, cert []byte, _ error) {
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("error configuring cert auth role: %s", err)
-	}
-
-	baseUrl := path.Join("/v1/auth", v.AppRoleAuthPath, "role", v.Role)
-	_, err = v.proxy.callVault("POST", baseUrl, "", map[string]string{
-		"period":   "24h",
-		"policies": v.Role,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("Error creating approle: %s", err.Error())
 	}
 
 	return privateKeyPEM, certificatePEM, nil
