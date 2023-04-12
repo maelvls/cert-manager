@@ -89,15 +89,15 @@ type Details struct {
 
 func (v *Vault) Setup(cfg *config.Config) error {
 	if v.Name == "" {
-		return fmt.Errorf("Name field must be set on Vault addon")
+		return fmt.Errorf("'Name' field must be set on Vault addon")
 	}
 	if v.Namespace == "" {
 		// TODO: in non-global instances, we could generate a new namespace just
 		// for this addon to be used from.
-		return fmt.Errorf("Namespace name must be specified")
+		return fmt.Errorf("'Namespace' name must be specified")
 	}
 	if v.Base == nil {
-		return fmt.Errorf("Base field must be set on Vault addon")
+		return fmt.Errorf("'Base' field must be set on Vault addon")
 	}
 
 	var err error
