@@ -37,6 +37,8 @@ IMAGE_projectcontour_amd64 := ghcr.io/projectcontour/contour:v1.32.1@sha256:4d71
 # non-hardened, Debian-based software images in its free tier. See
 # https://github.com/bitnami/containers/issues/83267
 IMAGE_projectcontourenvoy_amd64 := docker.io/bitnamilegacy/envoy:1.34.5-debian-12-r0@sha256:9acd468fcaba47cf45f173fcca5735fc8a5e6b75af7b4a878708856a09fcfb3b
+IMAGE_istiopilot_amd64 := docker.io/istio/pilot:1.28.2@sha256:2fa4972e831b9b81b1f2c8d52375ce6cb55704ecd554aba92251e5475fb22c53
+IMAGE_istioproxyv2_amd64 := docker.io/istio/proxyv2:1.28.2@sha256:5362b99294469b184003100ce2fcba0659bd0e30e126d03dd948c9d9dccbcf5a
 
 IMAGE_ingressnginx_arm64 := registry.k8s.io/ingress-nginx/controller:v1.12.3@sha256:800048a4cdf4ad487a17f56d22ec6be7a34248fc18900d945bc869fee4ccb2f7
 IMAGE_kyverno_arm64 := ghcr.io/kyverno/kyverno:v1.12.3@sha256:c076a1ba9e0fb33d8eca3e7499caddfa3bb4f5e52e9dee589d8476ae1688cd34
@@ -49,6 +51,8 @@ IMAGE_projectcontour_arm64 := ghcr.io/projectcontour/contour:v1.32.1@sha256:66b6
 # non-hardened, Debian-based software images in its free tier. See
 # https://github.com/bitnami/containers/issues/83267
 IMAGE_projectcontourenvoy_arm64 := docker.io/bitnamilegacy/envoy:1.34.5-debian-12-r0@sha256:e66a822b14cfa3d063de138a098bbd557a21da9d9cd467de4dfc16ae8e79e4db
+IMAGE_istiopilot_arm64 := docker.io/istio/pilot:1.28.2@sha256:12e2c37970f0ab7fa743b03f48d8e300e7a05970a36ad7e1d68b897de10bcb13
+IMAGE_istioproxyv2_arm64 := docker.io/istio/proxyv2:1.28.2@sha256:ebcc3af0d3d5a885322e689d12ef08defe292e5e85553388f3bc44e8c608bb88
 
 # We are using @inteon's fork of Pebble, which adds support for signing CSRs with
 # Ed25519 keys:
@@ -108,13 +112,14 @@ kind-exists: $(bin_dir)/scratch/kind-exists
 #  e2e-setup-bind           DNS-01 tests              SERVICE_IP_PREFIX.16
 #  e2e-setup-ingressnginx   HTTP-01 Ingress tests     SERVICE_IP_PREFIX.15   *.ingress-nginx.db.http01.example.com
 #  e2e-setup-projectcontour HTTP-01 GatewayAPI tests  SERVICE_IP_PREFIX.14   *.gateway.db.http01.example.com
+#  e2e-setup-istio          HTTP-01 GatewayAPI tests  SERVICE_IP_PREFIX.13   *.istio.db.http01.example.com
 .PHONY: e2e-setup
 ## Installs cert-manager as well as components required for running the
 ## end-to-end tests. If the kind cluster does not already exist, it will be
 ## created.
 ##
 ## @category Development
-e2e-setup: e2e-setup-gatewayapi e2e-setup-certmanager e2e-setup-vault e2e-setup-bind e2e-setup-sampleexternalissuer e2e-setup-samplewebhook e2e-setup-pebble e2e-setup-ingressnginx e2e-setup-projectcontour
+e2e-setup: e2e-setup-gatewayapi e2e-setup-certmanager e2e-setup-vault e2e-setup-bind e2e-setup-sampleexternalissuer e2e-setup-samplewebhook e2e-setup-pebble e2e-setup-ingressnginx e2e-setup-projectcontour e2e-setup-istio
 
 # The function "image-tar" returns the path to the image tarball for a given
 # image name. For example:
@@ -174,7 +179,7 @@ preload-kind-image: $(call image-tar,kind) | $(NEEDS_CTR)
 	$(CTR) inspect $(IMAGE_kind_$(CRI_ARCH)) 2>/dev/null >&2 || $(CTR) load -i $<
 endif
 
-LOAD_TARGETS=load-$(call image-tar,ingressnginx) load-$(call image-tar,kyverno) load-$(call image-tar,kyvernopre) load-$(call image-tar,bind) load-$(call image-tar,projectcontour) load-$(call image-tar,projectcontourenvoy) load-$(call image-tar,sampleexternalissuer) load-$(call local-image-tar,vaultretagged) load-$(call local-image-tar,pebble) load-$(call local-image-tar,samplewebhook) load-$(bin_dir)/containers/cert-manager-controller-linux-$(CRI_ARCH).tar load-$(bin_dir)/containers/cert-manager-acmesolver-linux-$(CRI_ARCH).tar load-$(bin_dir)/containers/cert-manager-cainjector-linux-$(CRI_ARCH).tar load-$(bin_dir)/containers/cert-manager-webhook-linux-$(CRI_ARCH).tar load-$(bin_dir)/containers/cert-manager-startupapicheck-linux-$(CRI_ARCH).tar
+LOAD_TARGETS=load-$(call image-tar,ingressnginx) load-$(call image-tar,kyverno) load-$(call image-tar,kyvernopre) load-$(call image-tar,bind) load-$(call image-tar,projectcontour) load-$(call image-tar,projectcontourenvoy) load-$(call image-tar,istiopilot) load-$(call image-tar,istioproxyv2) load-$(call image-tar,sampleexternalissuer) load-$(call local-image-tar,vaultretagged) load-$(call local-image-tar,pebble) load-$(call local-image-tar,samplewebhook) load-$(bin_dir)/containers/cert-manager-controller-linux-$(CRI_ARCH).tar load-$(bin_dir)/containers/cert-manager-acmesolver-linux-$(CRI_ARCH).tar load-$(bin_dir)/containers/cert-manager-cainjector-linux-$(CRI_ARCH).tar load-$(bin_dir)/containers/cert-manager-webhook-linux-$(CRI_ARCH).tar load-$(bin_dir)/containers/cert-manager-startupapicheck-linux-$(CRI_ARCH).tar
 .PHONY: $(LOAD_TARGETS)
 $(LOAD_TARGETS): load-%: % $(bin_dir)/scratch/kind-exists | $(NEEDS_KIND)
 	$(KIND) load image-archive --name=$(shell cat $(bin_dir)/scratch/kind-exists) $*
@@ -200,7 +205,7 @@ $(LOAD_TARGETS): load-%: % $(bin_dir)/scratch/kind-exists | $(NEEDS_KIND)
 #    tag. The rule will fail and the new digest will be printed out.
 # 3. It prevents us accidentally using the wrong digest when we pin the images
 #    in the variables above.
-$(call image-tar,vault) $(call image-tar,kyverno) $(call image-tar,kyvernopre) $(call image-tar,bind) $(call image-tar,projectcontour) $(call image-tar,projectcontourenvoy) $(call image-tar,sampleexternalissuer) $(call image-tar,ingressnginx): $(bin_dir)/downloaded/containers/$(CRI_ARCH)/%.tar: | $(NEEDS_CRANE)
+$(call image-tar,vault) $(call image-tar,kyverno) $(call image-tar,kyvernopre) $(call image-tar,bind) $(call image-tar,projectcontour) $(call image-tar,projectcontourenvoy) $(call image-tar,istiopilot) $(call image-tar,istioproxyv2) $(call image-tar,sampleexternalissuer) $(call image-tar,ingressnginx): $(bin_dir)/downloaded/containers/$(CRI_ARCH)/%.tar: | $(NEEDS_CRANE)
 	@$(eval IMAGE=$(subst +,:,$*))
 	@$(eval IMAGE_WITHOUT_DIGEST=$(shell cut -d@ -f1 <<<"$(IMAGE)"))
 	@$(eval DIGEST=$(subst $(IMAGE_WITHOUT_DIGEST)@,,$(IMAGE)))
@@ -520,6 +525,44 @@ e2e-setup-projectcontour: $(call image-tar,projectcontour) load-$(call image-tar
 		--set-file configInline=make/config/projectcontour/contour.yaml \
 		projectcontour bitnami/contour >/dev/null
 	$(KUBECTL) apply --server-side -f make/config/projectcontour/gateway.yaml
+
+.PHONY: e2e-setup-istio
+e2e-setup-istio: $(call image-tar,istiopilot) load-$(call image-tar,istiopilot) $(call image-tar,istioproxyv2) load-$(call image-tar,istioproxyv2) make/config/istio/gateway.yaml $(bin_dir)/scratch/kind-exists | $(NEEDS_HELM) $(NEEDS_KUBECTL)
+	@$(eval PILOT_TAG=$(shell tar xfO $< manifest.json | jq '.[0].RepoTags[0]' -r | cut -d: -f2))
+	@$(eval PROXY_TAG=$(shell tar xfO $(call image-tar,istioproxyv2) manifest.json | jq '.[0].RepoTags[0]' -r | cut -d: -f2))
+	$(HELM) repo add istio --force-update https://istio-release.storage.googleapis.com/charts >/dev/null
+	# Install Istio base chart (CRDs)
+	$(HELM) upgrade \
+		--install \
+		--wait \
+		--namespace istio-system \
+		--create-namespace \
+		--set defaultRevision=default \
+		istio-base istio/base >/dev/null
+	# Install Istio discovery (istiod)
+	$(HELM) upgrade \
+		--install \
+		--wait \
+		--namespace istio-system \
+		--set pilot.hub=docker.io/istio \
+		--set pilot.tag=$(PILOT_TAG) \
+		--set pilot.image=pilot \
+		--set global.imagePullPolicy=Never \
+		--set global.proxy.image=proxyv2 \
+		--set global.proxy_init.image=proxyv2 \
+		--set global.hub=docker.io/istio \
+		--set global.tag=$(PROXY_TAG) \
+		istiod istio/istiod >/dev/null
+	# Install Istio ingress gateway with fixed IP
+	$(HELM) upgrade \
+		--install \
+		--wait \
+		--namespace istio-system \
+		--set service.type=ClusterIP \
+		--set service.clusterIP=${SERVICE_IP_PREFIX}.13 \
+		--set imagePullPolicy=Never \
+		istio-ingress istio/gateway >/dev/null
+	$(KUBECTL) apply --server-side -f make/config/istio/gateway.yaml
 
 .PHONY: e2e-setup-sampleexternalissuer
 e2e-setup-sampleexternalissuer: load-$(call image-tar,sampleexternalissuer) $(bin_dir)/scratch/kind-exists | $(NEEDS_KUBECTL)
