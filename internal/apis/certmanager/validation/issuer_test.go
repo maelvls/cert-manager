@@ -540,6 +540,7 @@ func TestValidateACMEIssuerConfig(t *testing.T) {
 								ParentRefs: []gwapi.ParentReference{
 									{
 										Name: "blah",
+										Kind: (*gwapi.Kind)(ptr.To("Gateway")),
 									},
 								},
 							},
@@ -556,15 +557,21 @@ func TestValidateACMEIssuerConfig(t *testing.T) {
 				Solvers: []cmacme.ACMEChallengeSolver{
 					{
 						HTTP01: &cmacme.ACMEChallengeSolverHTTP01{
-							GatewayHTTPRoute: &cmacme.ACMEChallengeSolverHTTP01GatewayHTTPRoute{},
+							GatewayHTTPRoute: &cmacme.ACMEChallengeSolverHTTP01GatewayHTTPRoute{
+								ParentRefs: []gwapi.ParentReference{
+									{
+										Kind: (*gwapi.Kind)(ptr.To("Gateway")),
+									},
+								},
+							},
 						},
 					},
 				},
 			},
 			errs: []*field.Error{
 				field.Required(
-					fldPath.Child("solvers").Index(0).Child("http01", "gateway").Child("parentRefs"),
-					"at least 1 parentRef is required",
+					fldPath.Child("solvers").Index(0).Child("http01", "gateway").Child("parentRefs").Index(0).Child("name"),
+					"name is required when kind is specified",
 				),
 			},
 		},
@@ -584,6 +591,7 @@ func TestValidateACMEIssuerConfig(t *testing.T) {
 								ParentRefs: []gwapi.ParentReference{
 									{
 										Name: "blah",
+										Kind: (*gwapi.Kind)(ptr.To("Gateway")),
 									},
 								},
 							},

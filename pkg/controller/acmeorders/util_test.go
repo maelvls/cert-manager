@@ -24,6 +24,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+	gwapi "sigs.k8s.io/gateway-api/apis/v1"
 
 	acmecl "github.com/cert-manager/cert-manager/pkg/acme/client"
 	cmacme "github.com/cert-manager/cert-manager/pkg/apis/acme/v1"
@@ -48,6 +49,11 @@ func TestChallengeSpecForAuthorization(t *testing.T) {
 			Ingress: &cmacme.ACMEChallengeSolverHTTP01Ingress{
 				Name: "empty-selector-solver",
 			},
+		},
+	}
+	emptySelectorSolverHTTP01HTTPRoute := cmacme.ACMEChallengeSolver{
+		HTTP01: &cmacme.ACMEChallengeSolverHTTP01{
+			GatewayHTTPRoute: &cmacme.ACMEChallengeSolverHTTP01GatewayHTTPRoute{},
 		},
 	}
 	emptySelectorSolverDNS01 := cmacme.ACMEChallengeSolver{
@@ -333,6 +339,54 @@ func TestChallengeSpecForAuthorization(t *testing.T) {
 				DNSName: "example.com",
 				Token:   acmeChallengeDNS01.Token,
 				Solver:  emptySelectorSolverDNS01,
+			},
+		},
+		"should set parentRef on Challenge based on annotations": {
+			acmeClient: basicACMEClient,
+			issuer: &cmapi.Issuer{
+				Spec: cmapi.IssuerSpec{
+					IssuerConfig: cmapi.IssuerConfig{
+						ACME: &cmacme.ACMEIssuer{
+							Solvers: []cmacme.ACMEChallengeSolver{emptySelectorSolverHTTP01HTTPRoute},
+						},
+					},
+				},
+			},
+			order: &cmacme.Order{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						cmacme.ACMECertificateHTTP01ParentRefName: "test-parent-ref-name",
+						cmacme.ACMECertificateHTTP01ParentRefKind: "ListenerSet",
+					},
+				},
+				Spec: cmacme.OrderSpec{
+					DNSNames: []string{"example.com"},
+				},
+			},
+			authz: &cmacme.ACMEAuthorization{
+				Identifier: "example.com",
+				Challenges: []cmacme.ACMEChallenge{*acmeChallengeHTTP01},
+			},
+			expectedChallengeSpec: &cmacme.ChallengeSpec{
+				Type:    cmacme.ACMEChallengeTypeHTTP01,
+				DNSName: "example.com",
+				Token:   acmeChallengeHTTP01.Token,
+				Solver: cmacme.ACMEChallengeSolver{
+					HTTP01: &cmacme.ACMEChallengeSolverHTTP01{
+						GatewayHTTPRoute: &cmacme.ACMEChallengeSolverHTTP01GatewayHTTPRoute{
+							ParentRefs: []gwapi.ParentReference{
+								{
+									Kind: func() *gwapi.Kind {
+										ls := gwapi.Kind("ListenerSet")
+										return &ls
+									}(),
+									Name:      gwapi.ObjectName("test-parent-ref-name"),
+									Namespace: (*gwapi.Namespace)(ptr.To("")),
+								},
+							},
+						},
+					},
+				},
 			},
 		},
 		"should return an error if none match": {
